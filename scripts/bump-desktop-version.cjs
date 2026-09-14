@@ -4,12 +4,27 @@ const path = require("node:path");
 const repoRoot = path.resolve(__dirname, "..");
 const desktopPackagePath = path.join(repoRoot, "desktop", "package.json");
 
+const BUMP_KINDS = ["major", "minor", "patch"];
+
 function printHelp() {
   console.log([
-    "Usage: node scripts/bump-desktop-version.cjs [--dry-run] X.Y.Z",
+    "Usage: node scripts/bump-desktop-version.cjs [options] [X.Y.Z]",
     "",
-    "Updates desktop/package.json version before a desktop package release.",
-    "Use a stable semver without a leading v, for example 0.3.20.",
+    "Bumps desktop/package.json version before a desktop package release.",
+    "",
+    "Options:",
+    "  (no arguments)   Auto bump the patch number, e.g. 0.4.24 -> 0.4.25",
+    "  --patch          Auto bump patch (default in auto mode)",
+    "  --minor          Auto bump minor, e.g. 0.4.24 -> 0.5.0",
+    "  --major          Auto bump major, e.g. 0.4.24 -> 1.0.0",
+    "  X.Y.Z            Set an explicit stable semver, must be greater than current",
+    "  --dry-run        Print the resolved next version without writing the file",
+    "  -h, --help       Show this help",
+    "",
+    "Environment:",
+    "  AI_NOVEL_SKIP_VERSION_BUMP=1   Skip the auto bump (ignored when X.Y.Z is given explicitly)",
+    "",
+    "Versions must be stable semver without a leading v, for example 0.3.20.",
   ].join("\n"));
 }
 
@@ -18,6 +33,8 @@ function parseArgs(argv) {
     dryRun: false,
     help: false,
     version: "",
+    bumpKind: "patch",
+    kindFlagSet: false,
   };
 
   for (const arg of argv) {
@@ -29,6 +46,11 @@ function parseArgs(argv) {
       options.dryRun = true;
       continue;
     }
+    if (arg === "--patch" || arg === "--minor" || arg === "--major") {
+      options.bumpKind = arg.slice(2);
+      options.kindFlagSet = true;
+      continue;
+    }
     if (arg.startsWith("-")) {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -36,6 +58,10 @@ function parseArgs(argv) {
       throw new Error(`Unexpected extra version argument: ${arg}`);
     }
     options.version = arg.trim();
+  }
+
+  if (options.version && options.kindFlagSet) {
+    throw new Error("Do not combine an explicit X.Y.Z with --patch/--minor/--major.");
   }
 
   return options;
@@ -61,6 +87,21 @@ function compareSemver(left, right) {
   return 0;
 }
 
+function bumpParts(parts, kind) {
+  const [major, minor, patch] = parts;
+  if (kind === "major") {
+    return [major + 1, 0, 0];
+  }
+  if (kind === "minor") {
+    return [major, minor + 1, 0];
+  }
+  return [major, minor, patch + 1];
+}
+
+function joinVersion(parts) {
+  return parts.join(".");
+}
+
 function readDesktopPackageJson() {
   return JSON.parse(fs.readFileSync(desktopPackagePath, "utf8"));
 }
@@ -82,32 +123,51 @@ function main() {
     printHelp();
     return;
   }
-  if (!options.version) {
-    throw new Error("Missing target version.");
-  }
 
   const packageJson = readDesktopPackageJson();
   const currentVersion = typeof packageJson.version === "string" ? packageJson.version.trim() : "";
   const currentParts = parseStableSemver(currentVersion, "desktop/package.json version");
-  const nextParts = parseStableSemver(options.version, "Target version");
 
-  if (compareSemver(nextParts, currentParts) <= 0) {
-    throw new Error(`Target version ${options.version} must be greater than current version ${currentVersion}.`);
-  }
-
-  console.log(`[desktop-version] current=${currentVersion}`);
-  console.log(`[desktop-version] next=${options.version}`);
-
-  if (options.dryRun) {
-    console.log("[desktop-version] dry run passed; desktop/package.json was not changed.");
-    printNextSteps(options.version);
+  // Auto mode (no explicit version): this is the packaging pipeline path and can be skipped.
+  if (!options.version && process.env.AI_NOVEL_SKIP_VERSION_BUMP === "1") {
+    console.log(`[desktop-version] auto bump skipped (AI_NOVEL_SKIP_VERSION_BUMP=1); keeping ${currentVersion}.`);
     return;
   }
 
-  packageJson.version = options.version;
+  let nextVersion;
+  let mode;
+  if (options.version) {
+    const nextParts = parseStableSemver(options.version, "Target version");
+    if (compareSemver(nextParts, currentParts) <= 0) {
+      throw new Error(`Target version ${options.version} must be greater than current version ${currentVersion}.`);
+    }
+    nextVersion = options.version;
+    mode = "explicit";
+  } else {
+    if (!BUMP_KINDS.includes(options.bumpKind)) {
+      throw new Error(`Unknown bump kind: ${options.bumpKind}`);
+    }
+    nextVersion = joinVersion(bumpParts(currentParts, options.bumpKind));
+    mode = "auto";
+  }
+
+  console.log(`[desktop-version] current=${currentVersion}`);
+  console.log(`[desktop-version] next=${nextVersion} (${mode === "auto" ? `auto ${options.bumpKind}` : "explicit"})`);
+
+  if (options.dryRun) {
+    console.log("[desktop-version] dry run; desktop/package.json was not changed.");
+    if (mode === "explicit") {
+      printNextSteps(nextVersion);
+    }
+    return;
+  }
+
+  packageJson.version = nextVersion;
   fs.writeFileSync(desktopPackagePath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
-  console.log(`[desktop-version] updated desktop/package.json to ${options.version}.`);
-  printNextSteps(options.version);
+  console.log(`[desktop-version] updated desktop/package.json to ${nextVersion}.`);
+  if (mode === "explicit") {
+    printNextSteps(nextVersion);
+  }
 }
 
 try {
