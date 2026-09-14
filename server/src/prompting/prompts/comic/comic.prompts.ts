@@ -167,6 +167,8 @@ export interface ComicPanelScriptPromptInput {
   /** 用户本次补充的分格要求，只能影响表达偏好，不得覆盖结构化输出规则 */
   scriptPromptInstruction?: string;
   targetPanelCount?: number;
+  /** 厂商输出 token 上限装不下完整预算时为 true，必须按极简规则压缩每格文本 */
+  tightBudget?: boolean;
 }
 
 export const comicPanelScriptPrompt: PromptAsset<
@@ -174,7 +176,7 @@ export const comicPanelScriptPrompt: PromptAsset<
   ComicPanelScriptOutput
 > = {
   id: "comic.panelScript",
-  version: "v1",
+  version: "v2",
   taskType: "chapter_drafting",
   mode: "structured",
   language: "zh",
@@ -225,8 +227,17 @@ export const comicPanelScriptPrompt: PromptAsset<
     const visualPromptRule = is4koma
       ? `9. visualPrompt 必须以风格前缀「${stylePrefix}」开头，然后按四格结构显式描述每个子格内容，格式：
    Panel1:[起] <画面内容>. Panel2:[承] <画面内容>. Panel3:[转] <画面内容>. Panel4:[合] <画面内容>.
-   每格描述独立，镜头/情绪/内容必须有明显差异，不要重复相近画面。四格合计信息量 > 单格3倍以上。`
-      : `9. visualPrompt 必须以固定风格前缀「${stylePrefix}」开头，然后再描述画面内容（出场角色、服装、表情、场景、构图），不含气泡文字`;
+   每格描述独立，镜头/情绪/内容必须有明显差异，不要重复相近画面。四格合计信息量 > 单格3倍以上。每条子格用英文关键词短语，长度见规则 12。`
+      : `9. visualPrompt 必须以固定风格前缀「${stylePrefix}」开头，然后用英文关键词短语描述画面内容（出场角色、服装、表情、场景、构图），不含气泡文字，长度见规则 12`;
+    // 大体量 JSON 最容易因输出上限被截断：常规模式要求精炼，预算被厂商上限压缩时进入极简模式
+    const brevityRule = input.tightBudget
+      ? `12.【极简输出·硬约束】本话格数多、输出长度上限较低，每格文本必须尽量短，首要目标是让 ${panelTarget} 格 JSON 一次性完整输出：
+   - visualPrompt 只写英文逗号分隔的关键词短语，普通格不超过 45 个英文词；四格每条子格不超过 20 个词；不要完整句子
+   - focus 不超过 18 个汉字；action 不超过 30 个汉字
+   - 每格最多 2 个气泡，每泡不超过 15 个汉字；非必要的格不写对白
+   - characterRefs 只保留 name 与 expression，costume/lighting/props 一律省略
+   - scenes 的 palette/keyElements 各不超过 16 个汉字，省略 materials/ambiance/layout`
+      : `12.【输出长度控制】每格文本精炼，保证 ${panelTarget} 格 JSON 完整：visualPrompt 用英文逗号分隔的关键词短语（普通格 50-90 个英文词，四格每条子格 25-40 个词），不写完整句子；focus 不超过 30 个汉字；action 不超过 50 个汉字；每格通常 1-2 个气泡；characterRefs 中 costume 仅在确有换装时填写，lighting/props 非必要省略；scenes 的 palette/keyElements 各不超过 24 个汉字，其余可选字段尽量简短`;
 
     return [
       new SystemMessage(
@@ -252,7 +263,8 @@ export const comicPanelScriptPrompt: PromptAsset<
 8. focus 用一句话说明本格主视觉焦点，不能写空泛总结
 ${visualPromptRule}
 10. ${densityRuleMap[densityMode]}
-11. 画风：${input.stylePreset ?? "彩色韩漫"}`,
+11. 画风：${input.stylePreset ?? "彩色韩漫"}
+${brevityRule}`,
       ),
       new HumanMessage(
         `漫画项目：${input.projectTitle}
