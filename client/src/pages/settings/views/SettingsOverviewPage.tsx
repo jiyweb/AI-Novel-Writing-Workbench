@@ -17,7 +17,7 @@ import { SettingsShell } from "../components/SettingsShell";
 import { APP_RUNTIME } from "@/lib/constants";
 
 const entries = [
-  { to: "/settings/models", title: "模型与厂商", description: "添加模型厂商、选择模型并管理连接。", icon: Bot },
+  { to: "/settings/models", title: "模型与厂商", description: "添加模型厂商，分别配置文本模型和生图模型。", icon: Bot },
   { to: "/settings/model-routes", title: "模型路由管理", description: "为不同创作任务选择模型并检查连接状态。", icon: Route },
   { to: "/settings/director", title: "自动导演", description: "安排问题处理、确认偏好与提醒方式。", icon: BookOpenCheck },
   { to: "/settings/knowledge", title: "知识库与写法", description: "让资料和写法偏好参与后续创作。", icon: Database },

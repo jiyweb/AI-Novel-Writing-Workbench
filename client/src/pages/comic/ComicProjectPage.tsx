@@ -108,7 +108,7 @@ export default function ComicProjectPage() {
   const queryClient = useQueryClient();
   const [showFormatPicker, setShowFormatPicker] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
-  // 图片模型选择跨项目/跨刷新保留（用户通常长期用同一个图片模型）
+  // 生图模型选择跨项目/跨刷新保留（用户通常长期用同一个生图模型）
   const [selectedProvider, setSelectedProvider] = useState<string>(() => {
     try { return localStorage.getItem("comic.preferredImageProvider") ?? ""; } catch { return ""; }
   });
@@ -348,11 +348,11 @@ export default function ComicProjectPage() {
               {formatDef.tag}
             </span>
           )}
-          {/* 图片模型全局选择器 */}
+          {/* 生图模型全局选择器 */}
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">图片模型</span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">生图模型</span>
             {providerOptions.length === 0 ? (
-              <span className="text-xs text-destructive">暂无可用图片服务</span>
+              <span className="text-xs text-destructive">暂无可用的生图模型</span>
             ) : (
               <SelectControl
                 className="rounded-md border bg-background px-2.5 py-1 text-xs"

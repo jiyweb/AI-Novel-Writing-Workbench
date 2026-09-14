@@ -594,7 +594,7 @@ function PanelDetailDialog({
                   })}
                 </div>
                 <p className="mt-1.5 text-[10px] text-muted-foreground">
-                  这些素材会被合成为雪碧图后传给图像模型，用于锁定角色外形、服装、道具与场景。
+                  这些素材会被合成为雪碧图后传给生图模型，用于锁定角色外形、服装、道具与场景。
                 </p>
               </div>
             )}
@@ -602,7 +602,7 @@ function PanelDetailDialog({
             <div>
               <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-muted-foreground">
                 <FileText className="h-3 w-3" />
-                上次发送给图像模型的 Prompt
+                上次发送给生图模型的 Prompt
               </div>
               {imageData.prompt ? (
                 <>

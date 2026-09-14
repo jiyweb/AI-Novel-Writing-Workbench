@@ -261,7 +261,7 @@ function SceneDetail({
             <p className="mt-1.5 text-[11px] text-destructive">{sheet.error}</p>
           )}
           <p className="mt-2 text-[11px] text-muted-foreground">
-            设定图会作为低权重参考图传给图像模型，只锁定色调/布局/材质，镜头仍按每格自由运镜。建议先保存场景圣经再生成。
+            设定图会作为低权重参考图传给生图模型，只锁定色调/布局/材质，镜头仍按每格自由运镜。建议先保存场景圣经再生成。
           </p>
           <div className="mt-2 flex gap-2">
             <Button

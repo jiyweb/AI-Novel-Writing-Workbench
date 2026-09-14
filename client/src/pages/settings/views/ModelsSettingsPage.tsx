@@ -3,7 +3,7 @@ import { SettingsShell } from "../components/SettingsShell";
 
 export default function ModelsSettingsPage() {
   return (
-    <SettingsShell title="模型与厂商" description="添加并管理创作可用的模型厂商与模型。">
+    <SettingsShell title="模型与厂商" description="分别配置文字创作用的文本模型和图片生成用的生图模型。">
       <SettingsPage />
     </SettingsShell>
   );

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, ChevronDown, Image, RefreshCw, RotateCcw, Trash2, WalletCards, X } from "lucide-react";
+import { Bot, ChevronDown, RefreshCw, RotateCcw, Trash2, WalletCards, X } from "lucide-react";
 import type { LLMProvider, ReasoningEffort } from "@ai-novel/shared/types/llm";
 import type { APIKeyStatus, ProviderBalanceStatus } from "@/api/settings";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { AUTO_DIRECTOR_MOBILE_CLASSES } from "@/mobile/autoDirector";
 import { ProviderRequestLimitSummary } from "./ProviderRequestLimitFields";
-import { formatBalanceAmount, formatBalanceTime } from "../settingsFormatters";
+import { formatBalanceAmount, formatBalanceTime } from "../../settingsFormatters";
 
 export interface ProviderCardViewModel {
   provider: APIKeyStatus;
@@ -66,9 +66,6 @@ export default function ProviderStatusCard(props: {
   const { provider, balance } = item;
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
-  const imageModelLabel = provider.supportsImageGeneration
-    ? provider.currentImageModel || provider.defaultImageModel || "未设置"
-    : "不支持图像生成";
   const visibleModels = modelsOpen ? provider.models : provider.models.slice(0, 8);
   const canUseProvider = provider.isConfigured && provider.isActive && Boolean(provider.currentModel);
   const testDisabledReason = provider.isConfigured ? "" : "配置 API Key 后可以测试连接。";
@@ -88,7 +85,7 @@ export default function ProviderStatusCard(props: {
             {provider.kind === "custom" ? <Badge variant="outline">自定义</Badge> : null}
           </div>
           <div className={`text-xs text-muted-foreground ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
-            {canUseProvider ? "可用于创作任务。" : "完成配置后可用于创作任务。"}
+            {canUseProvider ? "可用于文字创作任务。" : "完成配置后可用于文字创作任务。"}
           </div>
         </div>
         <Badge
@@ -99,18 +96,10 @@ export default function ProviderStatusCard(props: {
         </Badge>
       </div>
 
-      <div className="mb-3 grid min-w-0 gap-2 text-sm md:grid-cols-2">
-        <div className="min-w-0 rounded-lg border bg-muted/25 p-3">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Bot className="h-3.5 w-3.5" /> 文本模型</div>
-          <div className={`mt-1 font-medium ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
-            {provider.currentModel || "-"}
-          </div>
-        </div>
-        <div className="min-w-0 rounded-lg border bg-muted/25 p-3">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Image className="h-3.5 w-3.5" /> 图像模型</div>
-          <div className={`mt-1 font-medium ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
-            {imageModelLabel}
-          </div>
+      <div className="mb-3 min-w-0 rounded-lg border bg-muted/25 p-3">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Bot className="h-3.5 w-3.5" /> 文本模型</div>
+        <div className={`mt-1 font-medium ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
+          {provider.currentModel || "-"}
         </div>
       </div>
 

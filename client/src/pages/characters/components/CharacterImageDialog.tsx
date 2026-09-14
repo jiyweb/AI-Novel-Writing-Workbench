@@ -206,7 +206,7 @@ export function CharacterImageDialog({
         throw new Error("请先选择角色。");
       }
       if (!imageForm.provider) {
-        throw new Error("请先在系统设置中为一个厂商填写图像模型。");
+        throw new Error("请先在系统设置中为一个厂商填写生图模型。");
       }
       return generateCharacterImages({
         sceneType: "character",
@@ -324,7 +324,7 @@ export function CharacterImageDialog({
             <div className="space-y-1">
               <div className="text-sm font-semibold text-slate-900">最终发送 Prompt 预览</div>
               <div className="text-xs leading-5 text-slate-500">
-                这里展示最终会发送给图像模型的 prompt。你可以直接手动编辑；AI 优化后，也可以继续在这里修改。
+                这里展示最终会发送给生图模型的 prompt。你可以直接手动编辑；AI 优化后，也可以继续在这里修改。
               </div>
             </div>
             <textarea
@@ -363,7 +363,7 @@ export function CharacterImageDialog({
                   }))}
               >
                 {imageProviderOptions.length === 0 ? (
-                  <option value="">请先在系统设置中填写图像模型</option>
+                  <option value="">请先在系统设置中填写生图模型</option>
                 ) : null}
                 {imageProviderOptions.map((item) => (
                   <option key={item.provider} value={item.provider}>

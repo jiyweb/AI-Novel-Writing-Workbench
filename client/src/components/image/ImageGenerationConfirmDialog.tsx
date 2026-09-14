@@ -464,7 +464,7 @@ export function ImageGenerationConfirmDialog({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="mb-1 text-xs font-semibold text-muted-foreground">
-                  图片模型
+                  生图模型
                   {providerDirty && <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[9px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">已修改</span>}
                 </p>
                 <SelectControl
@@ -477,7 +477,7 @@ export function ImageGenerationConfirmDialog({
                   disabled={submitting || !!promptAssistLoading}
                 >
                   {providerChoices.length === 0 ? (
-                    <option value="">无可用图片服务，请先在系统设置配置</option>
+                    <option value="">暂无可用的生图模型，请到「模型设置」配置</option>
                   ) : (
                     providerChoices.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>
