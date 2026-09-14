@@ -195,6 +195,8 @@ export async function updateComicStyle(projectId: string, style: string): Promis
 export interface UpdateComicPresetPayload {
   format?: string;
   style?: string;
+  /** style === "custom" 时的自定义画风描述，直接透传给生图 prompt */
+  customStyle?: string;
   promptKeywords?: string;
   imageSize?: string;
 }

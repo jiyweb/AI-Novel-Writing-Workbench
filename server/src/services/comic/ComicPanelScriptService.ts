@@ -4,6 +4,7 @@ import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { comicPanelScriptPrompt } from "../../prompting/prompts/comic/comic.prompts";
 import { adaptationSourceRegistry } from "../adaptation/source/SourceContentPort";
 import { comicFactService } from "./ComicFactService";
+import { resolveComicStyleLabel } from "./comicStylePrompt";
 
 export interface GeneratePanelScriptInput {
   targetPanelCount?: number;
@@ -83,6 +84,8 @@ export class ComicPanelScriptService {
     const stylePreset = stylePresetRaw?.style;
     const stylePromptKeywords = stylePresetRaw?.promptKeywords;
     const comicFormat = stylePresetRaw?.format;
+    // 文本 LLM 看到的是可读画风标签（含自定义画风原文），不落英文 id
+    const styleLabel = resolveComicStyleLabel(project.stylePreset);
     const densityMode = input.densityMode ?? "balanced";
     const targetPanelCount =
       input.targetPanelCount
@@ -129,7 +132,7 @@ export class ComicPanelScriptService {
           } catch { /* ignore */ }
           return { name: s.name, sceneType: s.sceneType, summary: summary || undefined };
         }),
-        stylePreset,
+        stylePreset: styleLabel,
         stylePromptKeywords,
         comicFormat,
         factDigest,

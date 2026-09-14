@@ -35,10 +35,20 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import SelectControl from "@/components/common/SelectControl";
+import {
+  COMIC_STYLE_OPTIONS,
+  CUSTOM_STYLE_MAX_LENGTH,
+  CUSTOM_STYLE_VALUE,
+} from "./comicStyle";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function safeJsonParseProject(raw: string | null | undefined): { style?: string; format?: string; imageSize?: string } {
+function safeJsonParseProject(raw: string | null | undefined): {
+  style?: string;
+  customStyle?: string;
+  format?: string;
+  imageSize?: string;
+} {
   if (!raw) return {};
   try { return JSON.parse(raw); } catch { return {}; }
 }
@@ -90,17 +100,6 @@ function ExportPanel({ projectId, episodes }: { projectId: string; episodes: Com
   );
 }
 
-// ─── Style options ─────────────────────────────────────────────────────────────
-
-const STYLE_OPTIONS = [
-  { value: "webtoon_color", label: "彩色韩漫", desc: "鲜艳配色，干净线条" },
-  { value: "bl_manga", label: "彩色少女漫", desc: "柔和色调，精致五官" },
-  { value: "shounen_bw", label: "黑白少年漫", desc: "粗犷线条，动感构图" },
-  { value: "ink_traditional", label: "水墨国风", desc: "毛笔笔触，淡彩晕染" },
-  { value: "chibi", label: "Q版萌漫", desc: "圆润可爱，夸张表情" },
-  { value: "realistic", label: "写实风格", desc: "细腻光影，真实感" },
-];
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ComicProjectPage() {
@@ -108,6 +107,10 @@ export default function ComicProjectPage() {
   const queryClient = useQueryClient();
   const [showFormatPicker, setShowFormatPicker] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
+  // 自定义画风草稿：打开画风选择器时用当前保存值初始化（openStylePicker 在 preset 解析后定义）
+  const [customStyleDraft, setCustomStyleDraft] = useState("");
+  // 弹层内是否展开自定义画风编辑区（未保存前不改变项目画风）
+  const [customEditing, setCustomEditing] = useState(false);
   // 生图模型选择跨项目/跨刷新保留（用户通常长期用同一个生图模型）
   const [selectedProvider, setSelectedProvider] = useState<string>(() => {
     try { return localStorage.getItem("comic.preferredImageProvider") ?? ""; } catch { return ""; }
@@ -167,7 +170,18 @@ export default function ComicProjectPage() {
 
   const preset = safeJsonParseProject(project.stylePreset);
   const formatDef = COMIC_FORMATS.find((f) => f.value === preset.format) ?? COMIC_FORMATS[0];
-  const styleDef = STYLE_OPTIONS.find((s) => s.value === preset.style);
+  const styleDef = COMIC_STYLE_OPTIONS.find((s) => s.value === preset.style);
+  const openStylePicker = () => {
+    setShowFormatPicker(false);
+    setCustomStyleDraft(preset.customStyle ?? "");
+    setCustomEditing(preset.style === CUSTOM_STYLE_VALUE);
+    setShowStylePicker(true);
+  };
+  const saveCustomStyle = () => {
+    const text = customStyleDraft.trim();
+    if (text.length < 5) return;
+    presetMut.mutate({ style: CUSTOM_STYLE_VALUE, customStyle: text });
+  };
   const statusLabel: Record<string, string> = {
     draft: "草稿", outlined: "大纲已生成", scripted: "脚本已生成", completed: "已完成",
   };
@@ -286,43 +300,102 @@ export default function ComicProjectPage() {
           <div className="relative">
             <button
               type="button"
-              onClick={() => { setShowStylePicker((v) => !v); setShowFormatPicker(false); }}
+              onClick={() => (showStylePicker ? setShowStylePicker(false) : openStylePicker())}
               className="flex w-full items-center gap-2.5 rounded-lg border bg-background px-3 py-2.5 hover:bg-muted/50 transition-colors"
             >
               <Palette className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <div className="flex-1 text-left min-w-0">
                 <p className="text-[11px] text-muted-foreground">画风</p>
-                <p className="text-sm font-semibold leading-tight truncate">
-                  {styleDef?.label ?? preset.style ?? "默认"}
+                <p className="text-sm font-semibold leading-tight truncate" title={preset.style === CUSTOM_STYLE_VALUE ? preset.customStyle : undefined}>
+                  {preset.style === CUSTOM_STYLE_VALUE && preset.customStyle
+                    ? preset.customStyle
+                    : styleDef?.label ?? "彩色韩漫"}
                 </p>
               </div>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
             </button>
 
             {showStylePicker && (
-              <div className="absolute right-0 top-full mt-2 z-50 w-64 rounded-xl border bg-popover shadow-xl p-3">
-                <p className="text-xs font-medium text-muted-foreground mb-2">选择画风</p>
+              <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border bg-popover shadow-xl p-3">
+                <p className="text-xs font-medium text-muted-foreground mb-2">选择画风（角色、场景、格子统一使用）</p>
                 <div className="space-y-1">
-                  {STYLE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      disabled={presetMut.isPending}
-                      onClick={() => presetMut.mutate({ style: opt.value })}
-                      className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent transition-colors ${opt.value === preset.style ? "bg-primary/5 text-primary font-medium" : ""}`}
-                    >
-                      <div>
-                        <span className="font-medium">{opt.label}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">{opt.desc}</span>
-                      </div>
-                      {opt.value === preset.style && <Check className="h-3.5 w-3.5 flex-shrink-0" />}
-                    </button>
-                  ))}
+                  {COMIC_STYLE_OPTIONS.map((opt) => {
+                    const active = opt.value === preset.style && !customEditing;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={presetMut.isPending}
+                        onClick={() => {
+                          if (opt.value === CUSTOM_STYLE_VALUE) {
+                            if (!customEditing) setCustomStyleDraft(preset.customStyle ?? "");
+                            setCustomEditing(true);
+                          } else {
+                            presetMut.mutate({ style: opt.value });
+                          }
+                        }}
+                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-60 ${opt.value === CUSTOM_STYLE_VALUE && customEditing ? "bg-primary/5 text-primary font-medium" : "hover:bg-accent"} ${active ? "bg-primary/5 text-primary font-medium" : ""}`}
+                      >
+                        <div>
+                          <span className="font-medium">{opt.label}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{opt.desc}</span>
+                        </div>
+                        {active && <Check className="h-3.5 w-3.5 flex-shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {/* 自定义画风编辑区：点击「自定义画风」后展开，保存后才生效 */}
+                {customEditing && (
+                  <div className="mt-2 space-y-1.5 border-t pt-2">
+                    <textarea
+                      autoFocus
+                      className="w-full rounded-md border bg-background px-2.5 py-1.5 text-xs resize-y min-h-[72px]"
+                      placeholder="描述你想要的画风：风格流派、线条、配色、光影、参考作品等，至少 5 个字"
+                      rows={4}
+                      maxLength={CUSTOM_STYLE_MAX_LENGTH}
+                      value={customStyleDraft}
+                      onChange={(e) => setCustomStyleDraft(e.target.value)}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                        {customStyleDraft.trim().length}/{CUSTOM_STYLE_MAX_LENGTH}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          disabled={presetMut.isPending}
+                          onClick={() => {
+                            setCustomEditing(preset.style === CUSTOM_STYLE_VALUE);
+                            setCustomStyleDraft(preset.customStyle ?? "");
+                          }}
+                        >
+                          还原
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={presetMut.isPending
+                            || customStyleDraft.trim().length < 5
+                            || (preset.style === CUSTOM_STYLE_VALUE && customStyleDraft.trim() === (preset.customStyle ?? ""))}
+                          onClick={saveCustomStyle}
+                        >
+                          {presetMut.isPending ? "保存中…" : "保存自定义画风"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setShowStylePicker(false)}
-                  className="mt-2 w-full rounded-md py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+                  className="mt-1 w-full rounded-md py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
                 >
                   取消
                 </button>

@@ -14,6 +14,7 @@ import {
   describeDramaPaywallPlan,
   resolveDramaPaywallPlan,
 } from "../drama/engine/paywallPlanPolicy";
+import { resolveComicStyleLabel } from "./comicStylePrompt";
 
 export interface GenerateComicOutlineInput {
   startOrder?: number;
@@ -83,9 +84,7 @@ export class ComicEpisodePlanService {
         endOrder,
         paywallOrders,
         hookLibrary,
-        stylePreset: project.stylePreset
-          ? JSON.parse(project.stylePreset).style
-          : undefined,
+        stylePreset: resolveComicStyleLabel(project.stylePreset),
       },
       options: { temperature: 0.6, provider },
     });

@@ -201,8 +201,9 @@ export const comicPanelScriptPrompt: PromptAsset<
           return `${charName}：\n${lines.join("\n")}`;
         }).join("\n")
       : null;
+    // stylePromptKeywords 是漫画形态关键词（竖条漫/四格）；stylePreset 是可读画风标签
     const stylePrefix = input.stylePromptKeywords
-      ?? (input.stylePreset ? `${input.stylePreset} style` : "webtoon style, vibrant colors, clean lines");
+      ?? "webtoon style, vibrant colors, clean lines";
 
     // 已有场景清单（跨话复用：同地点沿用同名）
     const existingSceneSection = (input.existingScenes?.length ?? 0) > 0

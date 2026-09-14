@@ -51,6 +51,8 @@ const styleUpdateSchema = z.object({
 const presetUpdateSchema = z.object({
   format: z.string().trim().min(1).max(60).optional(),
   style: z.string().trim().max(120).optional(),
+  // style === "custom" 时的用户自定义画风原文，直接透传给生图 prompt
+  customStyle: z.string().trim().min(2).max(500).optional(),
   promptKeywords: z.string().trim().max(400).optional(),
   imageSize: z.string().trim().max(20).optional(),
 });

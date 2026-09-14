@@ -12,6 +12,7 @@ import type { AdaptationSourceType, SourceBundle, SourceRef } from "../adaptatio
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { comicVisualAnchorRewritePrompt, type ComicVisualAnchorRewriteOutput } from "../../prompting/prompts/comic/comic.prompts";
 import { removeComicProjectStorage } from "./storage/projectStorageCleanup";
+import { CUSTOM_COMIC_STYLE } from "./comicStylePrompt";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 
 adaptationSourceRegistry.register(novelSourceAdapter);
@@ -258,13 +259,23 @@ export class ComicProjectService {
 
   async updateProjectPreset(
     projectId: string,
-    patch: { format?: string; style?: string; promptKeywords?: string; imageSize?: string },
+    patch: { format?: string; style?: string; customStyle?: string; promptKeywords?: string; imageSize?: string },
   ) {
     const project = await prisma.comicProject.findUnique({ where: { id: projectId }, select: { stylePreset: true } });
     if (!project) throw new Error(`漫画项目不存在：${projectId}`);
     let current: Record<string, unknown> = {};
     try { if (project.stylePreset) current = JSON.parse(project.stylePreset); } catch { /* ignore */ }
-    const merged = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
+    if (patch.style === CUSTOM_COMIC_STYLE && !(patch.customStyle ?? "").trim()) {
+      throw new Error("请填写自定义画风描述后再保存。");
+    }
+    const merged: Record<string, unknown> = {
+      ...current,
+      ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)),
+    };
+    // 切回内置画风时清理旧的自定义文本，避免脏数据继续透传到生图 prompt
+    if (patch.style && patch.style !== CUSTOM_COMIC_STYLE) {
+      delete merged.customStyle;
+    }
     return prisma.comicProject.update({
       where: { id: projectId },
       data: { stylePreset: JSON.stringify(merged) },

@@ -86,7 +86,7 @@ function buildRecommendedSheetPrompt(character: ComicCharacter): string {
     "RIGHT TWO-THIRDS: full-body character turnaround showing three views side by side: front view, side view, back view",
     "all four views depict the SAME character with IDENTICAL costume, hairstyle, and color scheme",
     "white background, clean studio lighting, no text or watermarks",
-    "manga/webtoon illustration style, clean line art, vibrant colors",
+    // 画风不在此写死：后端会把项目所选画风（含自定义画风）追加到生图 prompt
   ];
   if (character.persona) lines.push(`character personality: ${character.persona}`);
   if (visualAnchorText) lines.push(`appearance: ${visualAnchorText}`);

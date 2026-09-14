@@ -4,16 +4,20 @@
  * 所有漫画相关图像生成（角色三视图、表情稿、角色资产、场景设定图、格子图）
  * 都应通过此函数注入项目画风，保证整本风格统一。
  *
- * 画风来自 ComicProject.stylePreset(JSON).style（webtoon_color / ink_traditional 等）；
+ * 画风来自 ComicProject.stylePreset(JSON)：
+ * - style 为内置 id（webtoon_color / ink_traditional 等）时取预置中英关键词；
+ * - style === "custom" 时直接透传 customStyle 用户原文，不得回退成默认画风；
  * 注意 stylePreset.promptKeywords 是「漫画形态」（竖条漫/四格）关键词，不是画风。
  */
+
+export const CUSTOM_COMIC_STYLE = "custom";
 
 interface StyleEntry {
   zh: string;
   en: string;
 }
 
-// 与前端 ComicProjectPage STYLE_OPTIONS 的 value 对应
+// 与前端 client/src/pages/comic/comicStyle.ts 的 value 对应
 const STYLE_KEYWORDS: Record<string, StyleEntry> = {
   webtoon_color: { zh: "彩色韩漫风格，干净线条，鲜艳配色", en: "Korean webtoon style, clean line art, vibrant colors" },
   bl_manga: { zh: "彩色少女漫风格，柔和色调，精致五官", en: "shoujo manga style, soft palette, delicate features" },
@@ -24,25 +28,62 @@ const STYLE_KEYWORDS: Record<string, StyleEntry> = {
 };
 
 const DEFAULT_STYLE: StyleEntry = STYLE_KEYWORDS.webtoon_color;
+const CUSTOM_STYLE_MAX_LENGTH = 500;
+
+interface ParsedStylePreset {
+  style?: string;
+  customStyle?: string;
+}
+
+function parseStylePreset(stylePresetRaw: string | null | undefined): ParsedStylePreset | null {
+  if (!stylePresetRaw) return null;
+  try {
+    const parsed = JSON.parse(stylePresetRaw) as ParsedStylePreset;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeCustomStyle(text: unknown): string {
+  if (typeof text !== "string") return "";
+  return text.trim().slice(0, CUSTOM_STYLE_MAX_LENGTH);
+}
 
 function resolveStyleEntry(stylePresetRaw: string | null | undefined): StyleEntry {
-  if (!stylePresetRaw) return DEFAULT_STYLE;
-  try {
-    const parsed = JSON.parse(stylePresetRaw) as { style?: string };
-    if (parsed.style && STYLE_KEYWORDS[parsed.style]) return STYLE_KEYWORDS[parsed.style];
-  } catch { /* ignore */ }
+  const parsed = parseStylePreset(stylePresetRaw);
+  if (parsed?.style === CUSTOM_COMIC_STYLE) {
+    // 自定义画风：原文直接透传，不能被默认画风回退吞掉
+    const custom = sanitizeCustomStyle(parsed.customStyle);
+    if (custom) return { zh: custom, en: "" };
+    // customStyle 缺失（脏数据）时才回退默认
+    return DEFAULT_STYLE;
+  }
+  if (parsed?.style && STYLE_KEYWORDS[parsed.style]) return STYLE_KEYWORDS[parsed.style];
   return DEFAULT_STYLE;
 }
 
-/** 返回中英组合画风关键词串，直接拼入图像 prompt */
+/** 返回中英组合画风关键词串，直接拼入图像 prompt；自定义画风原样透传 */
 export function resolveComicStyleKeywords(stylePresetRaw: string | null | undefined): string {
   const entry = resolveStyleEntry(stylePresetRaw);
-  return `${entry.zh}，${entry.en}`;
+  return entry.en ? `${entry.zh}，${entry.en}` : entry.zh;
 }
 
-/** 仅英文画风片段（用于以英文为主的 prompt） */
+/** 仅英文画风片段（用于以英文为主的 prompt）；自定义画风无英文片段时回传原文，避免丢风格 */
 export function resolveComicStyleKeywordsEn(stylePresetRaw: string | null | undefined): string {
-  return resolveStyleEntry(stylePresetRaw).en;
+  const entry = resolveStyleEntry(stylePresetRaw);
+  return entry.en || entry.zh;
+}
+
+/** 给文本 LLM（分话大纲/分格脚本）看的可读画风标签，不暴露 style id */
+export function resolveComicStyleLabel(stylePresetRaw: string | null | undefined): string {
+  const parsed = parseStylePreset(stylePresetRaw);
+  if (parsed?.style === CUSTOM_COMIC_STYLE) {
+    const custom = sanitizeCustomStyle(parsed.customStyle);
+    return custom ? `自定义画风：${custom}` : "彩色韩漫";
+  }
+  if (parsed?.style && STYLE_KEYWORDS[parsed.style]) return STYLE_KEYWORDS[parsed.style].zh;
+  return "彩色韩漫";
 }
 
 // ─── 性别强约束 ───────────────────────────────────────────────────────────────

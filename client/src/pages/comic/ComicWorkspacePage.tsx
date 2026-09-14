@@ -28,6 +28,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import SelectControl from "@/components/common/SelectControl";
+import {
+  COMIC_STYLE_OPTIONS,
+  CUSTOM_STYLE_MAX_LENGTH,
+  CUSTOM_STYLE_VALUE,
+} from "./comicStyle";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -37,15 +42,6 @@ const SOURCE_LABELS: Record<ComicSourceType, string> = {
   text_import: "文本导入",
   comic_import: "漫画改编",
 };
-
-const STYLE_PRESETS = [
-  { value: "webtoon_color", label: "彩色韩漫" },
-  { value: "bl_manga", label: "彩色少女漫" },
-  { value: "shounen_bw", label: "黑白少年漫" },
-  { value: "ink_traditional", label: "水墨国风" },
-  { value: "chibi", label: "Q 版萌漫" },
-  { value: "realistic", label: "写实风格" },
-];
 
 export interface ComicFormatDef {
   value: string;
@@ -305,6 +301,7 @@ function CreateWizard({ onCreated }: { onCreated: (id: string) => void }) {
     rawText: "",
     format: "webtoon",
     style: "webtoon_color",
+    customStyle: "",
   });
 
   const { data: novels } = useQuery({
@@ -329,11 +326,15 @@ function CreateWizard({ onCreated }: { onCreated: (id: string) => void }) {
       if (form.sourceType === "text_import") return form.rawText.trim().length > 0;
       return true;
     }
+    if (step === 3 && form.style === CUSTOM_STYLE_VALUE) {
+      return form.customStyle.trim().length >= 5;
+    }
     return true;
   };
 
   const handleSubmit = () => {
     const selectedFormat = COMIC_FORMATS.find((f) => f.value === form.format) ?? COMIC_FORMATS[0];
+    const customStyle = form.style === CUSTOM_STYLE_VALUE ? form.customStyle.trim() : undefined;
     createMut.mutate({
       title: form.title.trim(),
       sourceType: form.sourceType,
@@ -341,7 +342,13 @@ function CreateWizard({ onCreated }: { onCreated: (id: string) => void }) {
       inspiration: form.sourceType === "original" ? form.inspiration.trim() : undefined,
       rawText: form.sourceType === "text_import" ? form.rawText.trim() : undefined,
       comicFormat: selectedFormat.value,
-      stylePreset: JSON.stringify({ style: form.style, format: selectedFormat.value, promptKeywords: selectedFormat.promptKeywords, imageSize: selectedFormat.imageSize }),
+      stylePreset: JSON.stringify({
+        style: form.style,
+        ...(customStyle ? { customStyle } : {}),
+        format: selectedFormat.value,
+        promptKeywords: selectedFormat.promptKeywords,
+        imageSize: selectedFormat.imageSize,
+      }),
     });
   };
 
@@ -467,20 +474,45 @@ function CreateWizard({ onCreated }: { onCreated: (id: string) => void }) {
         )}
 
         {step === 3 && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium">画风预设</label>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">画风预设</label>
+              <p className="text-xs text-muted-foreground mt-0.5">角色、场景和每一格画面都会按这个画风统一生成</p>
+            </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {STYLE_PRESETS.map((p) => (
+              {COMIC_STYLE_OPTIONS.map((p) => (
                 <button
                   key={p.value}
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, style: p.value }))}
-                  className={`rounded-lg border p-3 text-sm font-medium transition-colors ${form.style === p.value ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted hover:bg-accent"}`}
+                  className={`rounded-lg border p-2.5 text-left transition-colors ${form.style === p.value ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted hover:bg-accent"}`}
                 >
-                  {p.label}
+                  <span className="block text-sm font-medium">{p.label}</span>
+                  <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{p.desc}</span>
                 </button>
               ))}
             </div>
+            {form.style === CUSTOM_STYLE_VALUE && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">描述你想要的画风</label>
+                <textarea
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm resize-y min-h-[96px]"
+                  placeholder={`例如：\n厚涂日系幻想风，柔和水彩质感，低饱和度配色，细腻光影，类似新海诚电影画面\n或：赛博朋克美漫风，高对比霓虹色，硬朗线条，胶片颗粒感`}
+                  rows={4}
+                  maxLength={CUSTOM_STYLE_MAX_LENGTH}
+                  value={form.customStyle}
+                  onChange={(e) => setForm((f) => ({ ...f, customStyle: e.target.value }))}
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    可以写风格流派、线条、配色、光影、参考作品等，至少 5 个字
+                  </p>
+                  <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                    {form.customStyle.length}/{CUSTOM_STYLE_MAX_LENGTH}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
