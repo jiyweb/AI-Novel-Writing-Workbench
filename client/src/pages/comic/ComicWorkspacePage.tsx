@@ -359,7 +359,7 @@ function CreateWizard({ onCreated }: { onCreated: (id: string) => void }) {
           {WIZARD_STEPS.map((s, i) => (
             <span
               key={s.key}
-              className={`rounded px-2 py-0.5 text-xs font-medium ${i === step ? "bg-primary text-primary-foreground" : i < step ? "bg-muted text-muted-foreground line-through" : "bg-muted text-muted-foreground"}`}
+              className={`rounded px-2 py-0.5 text-xs font-medium ${i === step ? "bg-primary text-primary-foreground" : i < step ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
             >
               {s.label}
             </span>
@@ -530,6 +530,7 @@ function CreateWizard({ onCreated }: { onCreated: (id: string) => void }) {
               type="button"
               size="sm"
               disabled={!canNext()}
+              title={!canNext() ? "先完成本步必填内容再继续" : undefined}
               onClick={() => setStep((s) => s + 1)}
             >
               下一步

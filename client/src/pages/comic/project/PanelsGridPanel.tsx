@@ -631,7 +631,16 @@ function PanelDetailDialog({
   );
 }
 
-export function PanelsGridPanel({ projectId, provider }: { projectId: string; provider: string }) {
+export function PanelsGridPanel({
+  projectId,
+  provider,
+  onGoToTab,
+}: {
+  projectId: string;
+  provider: string;
+  // 空状态引导：跳到其他工作页签（如「分话大纲」）
+  onGoToTab?: (tab: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [busyPanelId, setBusyPanelId] = useState("");
@@ -729,10 +738,26 @@ export function PanelsGridPanel({ projectId, provider }: { projectId: string; pr
         />
       )}
 
+      {episodes.length === 0 && (
+        <div className="py-12 text-center">
+          <p className="text-sm text-muted-foreground">还没有分话大纲，格子图需要先有分格脚本。</p>
+          {onGoToTab && (
+            <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => onGoToTab("outline")}>
+              去生成分话大纲
+            </Button>
+          )}
+        </div>
+      )}
+
       {panelsLoading && <div className="py-8 text-center text-sm text-muted-foreground">加载中...</div>}
       {!panelsLoading && panels.length === 0 && activeEpisode && (
-        <div className="py-8 text-center text-sm text-muted-foreground">
-          该话尚无格子脚本，请先在「分话大纲」中生成分格脚本。
+        <div className="py-12 text-center">
+          <p className="text-sm text-muted-foreground">这一话还没有分格脚本，先生成脚本再出格子图。</p>
+          {onGoToTab && (
+            <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => onGoToTab("outline")}>
+              去生成分格脚本
+            </Button>
+          )}
         </div>
       )}
 

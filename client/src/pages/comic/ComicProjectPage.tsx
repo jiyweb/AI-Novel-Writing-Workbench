@@ -9,10 +9,6 @@ import {
   Pencil,
   BookText,
   Palette,
-  LayoutTemplate,
-  Film,
-  Hash,
-  Users,
   Check,
 } from "lucide-react";
 import {
@@ -106,6 +102,8 @@ export default function ComicProjectPage() {
   const queryClient = useQueryClient();
   const [showFormatPicker, setShowFormatPicker] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
+  // 当前工作页签：空状态引导可以直接跳到对应步骤
+  const [activeTab, setActiveTab] = useState("outline");
   // 自定义画风草稿：打开画风选择器时用当前保存值初始化（openStylePicker 在 preset 解析后定义）
   const [customStyleDraft, setCustomStyleDraft] = useState("");
   // 弹层内是否展开自定义画风编辑区（未保存前不改变项目画风）
@@ -229,120 +227,132 @@ export default function ComicProjectPage() {
         </Button>
       </div>
 
-      {/* 项目信息头部 */}
-      <div className="rounded-xl border bg-card p-5 space-y-4">
+      {/* 项目信息头部：标题与进度在上，创作设置集中在下一行 */}
+      <div className="space-y-4 rounded-2xl bg-muted/30 p-5">
         {/* 标题行 */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight">{project.title}</h1>
-              <Badge variant={project.status === "outlined" || project.status === "scripted" ? "default" : "secondary"}>
-                {statusLabel[project.status] ?? project.status}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{sourceLabel[project.sourceType] ?? project.sourceType}</p>
-          </div>
-
-          {/* 形态卡片 — 点击展开选择器 */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => { setShowFormatPicker((v) => !v); setShowStylePicker(false); }}
-              className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-2.5 hover:bg-muted/70 transition-colors"
-            >
-              <div className={`flex-shrink-0 ${formatDef.imageSize === "1536x1024" ? "w-14 h-9" : "w-9 h-14"} text-primary`}>
-                {formatDef.layoutSvg}
-              </div>
-              <div className="text-left">
-                <p className="text-xs text-muted-foreground">漫画形态</p>
-                <p className="text-sm font-semibold">{formatDef.label}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight max-w-[100px]">{formatDef.desc}</p>
-              </div>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground/60 ml-1" />
-            </button>
-
-            {showFormatPicker && (
-              <div className="absolute right-0 top-full mt-2 z-50 w-[480px] rounded-xl border bg-popover shadow-xl p-4">
-                <p className="text-xs font-medium text-muted-foreground mb-3">选择漫画形态（影响图片比例与风格关键词）</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {COMIC_FORMATS.map((fmt) => (
-                    <button
-                      key={fmt.value}
-                      type="button"
-                      disabled={presetMut.isPending}
-                      onClick={() => presetMut.mutate({ format: fmt.value, promptKeywords: fmt.promptKeywords, imageSize: fmt.imageSize })}
-                      className={`relative flex flex-col items-center gap-1.5 rounded-lg border p-2 text-center transition-colors hover:bg-accent ${fmt.value === formatDef.value ? "border-primary bg-primary/5" : ""}`}
-                    >
-                      {fmt.value === formatDef.value && (
-                        <Check className="absolute top-1.5 right-1.5 h-3 w-3 text-primary" />
-                      )}
-                      <div className={`${fmt.imageSize === "1536x1024" ? "w-12 h-8" : "w-8 h-12"} text-primary`}>
-                        {fmt.layoutSvg}
-                      </div>
-                      <span className="text-xs font-medium">{fmt.label}</span>
-                      <span className="text-[10px] text-muted-foreground leading-tight">{fmt.tag}</span>
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowFormatPicker(false)}
-                  className="mt-3 w-full rounded-md py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
-                >
-                  取消
-                </button>
-              </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h1 className="text-2xl font-bold tracking-tight">{project.title}</h1>
+          <Badge variant={project.status === "outlined" || project.status === "scripted" ? "default" : "secondary"}>
+            {statusLabel[project.status] ?? project.status}
+          </Badge>
+          <span className="text-xs text-muted-foreground">{sourceLabel[project.sourceType] ?? project.sourceType}</span>
+          <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+            {project.sourceBundle ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-0.5 text-green-600 dark:text-green-400">
+                <BookText className="h-3 w-3" />
+                内容源已导入
+              </span>
+            ) : (
+              <span>内容源未导入，可在「分话大纲」里导入</span>
             )}
+            <span className="tabular-nums">{formatDef.imageSize}</span>
           </div>
         </div>
 
-        {/* 统计指标行 */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2.5">
-            <Hash className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <div>
-              <p className="text-[11px] text-muted-foreground">话数</p>
-              <p className="text-lg font-bold leading-tight">{episodes.length}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2.5">
-            <Film className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <div>
-              <p className="text-[11px] text-muted-foreground">总格数</p>
-              <p className="text-lg font-bold leading-tight">
-                {episodes.reduce((s, e) => s + (e._count?.panels ?? 0), 0)}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2.5">
-            <Users className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <div>
-              <p className="text-[11px] text-muted-foreground">角色</p>
-              <p className="text-lg font-bold leading-tight">{project._count?.characters ?? project.characters.length}</p>
-            </div>
+        {/* 进度统计：用分隔与字重分层，不画描边方块 */}
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-muted-foreground">
+          <span>
+            话数
+            <b className="ml-1.5 text-base font-semibold tabular-nums text-foreground">{episodes.length}</b>
+          </span>
+          <span>
+            总格数
+            <b className="ml-1.5 text-base font-semibold tabular-nums text-foreground">
+              {episodes.reduce((s, e) => s + (e._count?.panels ?? 0), 0)}
+            </b>
+          </span>
+          <span>
+            角色
+            <b className="ml-1.5 text-base font-semibold tabular-nums text-foreground">
+              {project._count?.characters ?? project.characters.length}
+            </b>
+          </span>
+          <span className="hidden sm:inline">{formatDef.tag}</span>
+        </div>
+
+        {/* 创作设置行：形态、画风可直接调整，右侧选择生图厂商与模型 */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
+          <span className="mr-0.5 text-xs text-muted-foreground">创作设置</span>
+
+          {/* 漫画形态 — 点击展开选择器 */}
+          <div className="relative">
+            <button
+              type="button"
+              title={`${formatDef.label}：${formatDef.desc}（点击更换）`}
+              onClick={() => { setShowFormatPicker((v) => !v); setShowStylePicker(false); }}
+              className="inline-flex h-8 items-center gap-2 rounded-md border bg-background px-2.5 text-xs font-medium transition-colors hover:bg-accent"
+            >
+              <span className={`text-primary ${formatDef.imageSize === "1536x1024" ? "h-4 w-7" : "h-7 w-4"}`}>
+                {formatDef.layoutSvg}
+              </span>
+              {formatDef.label}
+              <Pencil className="h-3 w-3 text-muted-foreground/60" />
+            </button>
+
+            {showFormatPicker && (
+              <>
+                <button
+                  type="button"
+                  aria-label="关闭形态选择"
+                  className="fixed inset-0 z-40 cursor-default bg-transparent"
+                  onClick={() => setShowFormatPicker(false)}
+                />
+                <div className="absolute left-0 top-full z-50 mt-2 w-[480px] max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-4 shadow-xl">
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">选择漫画形态（决定画面比例和分格方式）</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {COMIC_FORMATS.map((fmt) => (
+                      <button
+                        key={fmt.value}
+                        type="button"
+                        disabled={presetMut.isPending}
+                        onClick={() => presetMut.mutate({ format: fmt.value, promptKeywords: fmt.promptKeywords, imageSize: fmt.imageSize })}
+                        className={`relative flex flex-col items-center gap-1.5 rounded-lg p-2 text-center transition-colors hover:bg-accent ${fmt.value === formatDef.value ? "bg-primary/5 ring-1 ring-primary" : ""}`}
+                      >
+                        {fmt.value === formatDef.value && (
+                          <Check className="absolute right-1.5 top-1.5 h-3 w-3 text-primary" />
+                        )}
+                        <div className={`${fmt.imageSize === "1536x1024" ? "h-8 w-12" : "h-12 w-8"} text-primary`}>
+                          {fmt.layoutSvg}
+                        </div>
+                        <span className="text-xs font-medium">{fmt.label}</span>
+                        <span className="text-[10px] leading-tight text-muted-foreground">{fmt.tag}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                    更换形态后，新生成的场景和格子图会按新比例出图，已经生成的图片不会自动重画。
+                  </p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* 画风 — 点击展开选择器 */}
           <div className="relative">
             <button
               type="button"
+              title="点击更换画风（角色、场景和每一格画面统一使用）"
               onClick={() => (showStylePicker ? setShowStylePicker(false) : openStylePicker())}
-              className="flex w-full items-center gap-2.5 rounded-lg border bg-background px-3 py-2.5 hover:bg-muted/50 transition-colors"
+              className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium transition-colors hover:bg-accent"
             >
-              <Palette className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[11px] text-muted-foreground">画风</p>
-                <p className="text-sm font-semibold leading-tight truncate" title={preset.style === CUSTOM_STYLE_VALUE ? preset.customStyle : undefined}>
-                  {preset.style === CUSTOM_STYLE_VALUE && preset.customStyle
-                    ? preset.customStyle
-                    : styleDef?.label ?? "彩色韩漫"}
-                </p>
-              </div>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+              <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">
+                {preset.style === CUSTOM_STYLE_VALUE && preset.customStyle
+                  ? preset.customStyle
+                  : styleDef?.label ?? "彩色韩漫"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
             </button>
 
             {showStylePicker && (
-              <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border bg-popover shadow-xl p-3">
+              <>
+                <button
+                  type="button"
+                  aria-label="关闭画风选择"
+                  className="fixed inset-0 z-40 cursor-default bg-transparent"
+                  onClick={() => setShowStylePicker(false)}
+                />
+                <div className="absolute left-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-3 shadow-xl">
                 <p className="text-xs font-medium text-muted-foreground mb-2">选择画风（角色、场景、格子统一使用）</p>
                 <div className="space-y-1">
                   {COMIC_STYLE_OPTIONS.map((opt) => {
@@ -418,36 +428,12 @@ export default function ComicProjectPage() {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => setShowStylePicker(false)}
-                  className="mt-1 w-full rounded-md py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
-                >
-                  取消
-                </button>
-              </div>
+                </div>
+              </>
             )}
           </div>
-        </div>
 
-        {/* 技术参数行 */}
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          <span className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs text-muted-foreground">
-            <LayoutTemplate className="h-3 w-3" />
-            {formatDef.imageSize}
-          </span>
-          {project.sourceBundle && (
-            <span className="inline-flex items-center gap-1 rounded-full border bg-green-500/10 px-2.5 py-0.5 text-xs text-green-600 dark:text-green-400">
-              <BookText className="h-3 w-3" />
-              内容源已导入
-            </span>
-          )}
-          {preset.format && (
-            <span className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs text-muted-foreground">
-              {formatDef.tag}
-            </span>
-          )}
-          {/* 生图厂商 + 模型选择器：厂商仅本项目记住，模型切换会保存为该厂商的默认生图模型 */}
+          {/* 生图厂商 + 模型：厂商仅本项目记住，模型切换保存为该厂商的默认生图模型 */}
           <div className="ml-auto flex items-center gap-1.5">
             {imageProviders.length === 0 ? (
               <>
@@ -458,7 +444,7 @@ export default function ComicProjectPage() {
               </>
             ) : (
               <>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">生图</span>
+                <span className="whitespace-nowrap text-xs text-muted-foreground">生图</span>
                 <SelectControl
                   aria-label="生图厂商"
                   className="rounded-md border bg-background px-2 py-1 text-xs"
@@ -471,7 +457,8 @@ export default function ComicProjectPage() {
                 </SelectControl>
                 <SelectControl
                   aria-label="生图模型"
-                  className="rounded-md border bg-background px-2 py-1 text-xs max-w-[200px]"
+                  title="切换后会保存为该厂商的默认生图模型，角色、场景和格子图都使用它"
+                  className="max-w-[200px] rounded-md border bg-background px-2 py-1 text-xs"
                   disabled={imageModelMut.isPending}
                   value={effectiveImageModel}
                   onChange={(e) => {
@@ -481,7 +468,6 @@ export default function ComicProjectPage() {
                     }
                   }}
                 >
-                  {imageModelOptions.length === 0 && <option value="">请先选择模型</option>}
                   {imageModelOptions.map((model) => (
                     <option key={model} value={model}>{model}</option>
                   ))}
@@ -492,7 +478,7 @@ export default function ComicProjectPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="outline">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full justify-start gap-1">
           <TabsTrigger value="outline">分话大纲</TabsTrigger>
           <TabsTrigger value="characters">
@@ -521,15 +507,18 @@ export default function ComicProjectPage() {
         </TabsContent>
 
         <TabsContent value="panels" className="mt-4">
-          <PanelsGridPanel projectId={id!} provider={resolvedProvider} />
+          <PanelsGridPanel projectId={id!} provider={resolvedProvider} onGoToTab={setActiveTab} />
         </TabsContent>
 
         <TabsContent value="export" className="mt-4">
           {episodes.length > 0 ? (
             <ExportPanel projectId={id!} episodes={episodes} />
           ) : (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              请先生成分话大纲。
+            <div className="py-12 text-center">
+              <p className="text-sm text-muted-foreground">还没有可导出的分话，先完成大纲和分格脚本。</p>
+              <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => setActiveTab("outline")}>
+                去生成分话大纲
+              </Button>
             </div>
           )}
         </TabsContent>

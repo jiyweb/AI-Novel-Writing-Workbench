@@ -227,12 +227,13 @@ function EpisodeCard({
             variant="outline"
             className="w-full"
             disabled={isBusy || !ep.outline}
+            title={!ep.outline ? "请先生成本话大纲" : undefined}
             onClick={() => onGenerateScript(ep)}
           >
             {isBusy ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                生成脚本...
+                正在生成分格脚本，通常需要 1-3 分钟…
               </>
             ) : (
               <>
@@ -241,6 +242,11 @@ function EpisodeCard({
               </>
             )}
           </Button>
+          {!ep.outline && (
+            <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+              本话还没有大纲，先用上方「生成大纲」补全
+            </p>
+          )}
         </CardContent>
       )}
     </Card>
@@ -346,9 +352,9 @@ export function EpisodeListPanel({
     <div className="space-y-4">
       <CharacterReadinessWarning characters={project.characters} />
 
-      <div className="rounded-lg border bg-muted/20 p-3">
+      <div className="rounded-xl bg-muted/40 p-3.5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {!project.sourceBundle && (
               <Button
                 type="button"
@@ -365,6 +371,7 @@ export function EpisodeListPanel({
               type="button"
               size="sm"
               disabled={outlineMut.isPending || !project.sourceBundle}
+              title={!project.sourceBundle ? "请先导入内容源" : undefined}
               onClick={() => outlineMut.mutate({ startOrder: (episodes.length || 0) + 1, count: 12 })}
             >
               <Sparkles className="h-4 w-4" />
@@ -423,8 +430,13 @@ export function EpisodeListPanel({
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">加载中...</div>}
 
       {!isLoading && episodes.length === 0 && (
-        <div className="py-8 text-center text-sm text-muted-foreground">
-          尚无分话大纲，点击「生成大纲」开始。
+        <div className="rounded-xl bg-muted/40 px-4 py-10 text-center">
+          <p className="text-sm font-medium">先把故事拆成分话大纲</p>
+          <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
+            {project.sourceBundle
+              ? "内容源已就绪，点击上方「生成第 1-12 话大纲」；大纲生成后，再逐话生成分格脚本。"
+              : "第一步点击「导入内容源」同步小说内容，第二步点击「生成第 1-12 话大纲」，第三步逐话生成分格脚本。"}
+          </p>
         </div>
       )}
 
