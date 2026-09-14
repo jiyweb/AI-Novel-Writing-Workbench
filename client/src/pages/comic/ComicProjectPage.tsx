@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -180,10 +180,10 @@ export default function ComicProjectPage() {
       {/* 顶部导航 */}
       <div className="flex items-center gap-2">
         <Button asChild type="button" variant="ghost" size="sm" className="-ml-2">
-          <a href="/comic">
+          <Link to="/comic">
             <ChevronLeft className="h-4 w-4" />
-            工作台
-          </a>
+            漫画工作台
+          </Link>
         </Button>
       </div>
 

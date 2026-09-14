@@ -12,7 +12,8 @@ import {
   Images,
   LayoutDashboard,
   ListTodo,
-  MonitorPlay,
+  // 短剧工作台暂时隐藏入口（/drama 路由与页面代码保留），恢复时连同下方导航项一起放开
+  // MonitorPlay,
   Radar,
   SquareStack,
   ScanSearch,
@@ -56,7 +57,8 @@ const navGroups: NavGroup[] = [
       { to: "/help", label: "创作向导", icon: CircleHelp },
       { to: "/market-radar", label: "热门题材雷达", icon: Radar },
       { to: "/novels", label: "小说列表", icon: BookOpenText },
-      { to: "/drama", label: "短剧工作台", icon: MonitorPlay, disabled: true },
+      // 短剧工作台暂时隐藏入口（/drama 路由与页面代码保留），恢复时把图标 import 一并放开
+      // { to: "/drama", label: "短剧工作台", icon: MonitorPlay, disabled: true },
       { to: "/comic", label: "漫画工作台", icon: SquareStack },
       { to: "/creative-hub", label: "创作中枢", icon: LayoutDashboard },
       { to: "/book-analysis", label: "拆书", icon: ScanSearch },
