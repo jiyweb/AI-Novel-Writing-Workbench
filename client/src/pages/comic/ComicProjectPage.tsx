@@ -23,13 +23,12 @@ import {
   type ComicEpisode,
   type ComicProject,
 } from "@/api/comic";
-import { ComicImageGenerationNotice } from "@/pages/comic/ComicImageGenerationNotice";
 import { COMIC_FORMATS } from "@/pages/comic/ComicWorkspacePage";
 import { CharactersPanel } from "@/pages/comic/project/CharactersPanel";
 import { ScenesPanel } from "@/pages/comic/project/ScenesPanel";
 import { EpisodeListPanel } from "@/pages/comic/project/EpisodeListPanel";
 import { PanelsGridPanel } from "@/pages/comic/project/PanelsGridPanel";
-import { getAPIKeySettings } from "@/api/settings";
+import { getAPIKeySettings, saveAPIKeySetting, type APIKeyStatus } from "@/api/settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -132,19 +131,48 @@ export default function ComicProjectPage() {
     enabled: Boolean(id),
   });
 
-  const { data: providerOptions = [] } = useQuery({
+  // 已配置且支持生图的厂商（每家可在模型设置里配置多个生图模型）
+  const { data: imageProviders = [] } = useQuery({
     queryKey: ["settings", "api-keys"],
     queryFn: getAPIKeySettings,
     select: (res) =>
-      (res.data ?? [])
-        .filter((p) => p.supportsImageGeneration && p.isConfigured)
-        .map((p) => ({ value: p.provider, label: p.displayName ?? p.name })),
+      (res.data ?? []).filter((p) => p.supportsImageGeneration && p.isConfigured),
   });
+  const providerOptions = imageProviders.map((p) => ({
+    value: p.provider,
+    label: p.displayName ?? p.name,
+  }));
   // 缓存的 provider 仍存在于可用列表才用，否则回退到第一个（避免引用已失效的 provider 配置）
   const resolvedProvider =
     (selectedProvider && providerOptions.some((p) => p.value === selectedProvider))
       ? selectedProvider
       : providerOptions[0]?.value || "";
+  const activeImageProvider =
+    imageProviders.find((p) => p.provider === resolvedProvider) ?? imageProviders[0];
+  // 当前实际生效的生图模型：DB 显式选择 → 厂商默认 → 首个可选模型
+  const effectiveImageModel =
+    activeImageProvider?.currentImageModel
+      ?? activeImageProvider?.defaultImageModel
+      ?? activeImageProvider?.imageModels[0]
+      ?? "";
+  const imageModelOptions = Array.from(
+    new Set(
+      [effectiveImageModel, ...(activeImageProvider?.imageModels ?? [])].filter(
+        (m): m is string => Boolean(m),
+      ),
+    ),
+  );
+
+  // 切换某厂商的默认生图模型（保存在模型设置中，全应用的图片生成共用）
+  const imageModelMut = useMutation({
+    mutationFn: (input: { provider: APIKeyStatus["provider"]; imageModel: string }) =>
+      saveAPIKeySetting(input.provider, { imageModel: input.imageModel }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings", "api-keys"] });
+      toast.success("该厂商的默认生图模型已切换，后续生成的图片都会使用这个模型");
+    },
+    onError: (e) => toast.error(String(e)),
+  });
 
   const presetMut = useMutation({
     mutationFn: (payload: Parameters<typeof updateComicPreset>[1]) => updateComicPreset(id!, payload),
@@ -200,8 +228,6 @@ export default function ComicProjectPage() {
           </Link>
         </Button>
       </div>
-
-      <ComicImageGenerationNotice />
 
       {/* 项目信息头部 */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
@@ -421,21 +447,46 @@ export default function ComicProjectPage() {
               {formatDef.tag}
             </span>
           )}
-          {/* 生图模型全局选择器 */}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">生图模型</span>
-            {providerOptions.length === 0 ? (
-              <span className="text-xs text-destructive">暂无可用的生图模型</span>
+          {/* 生图厂商 + 模型选择器：厂商仅本项目记住，模型切换会保存为该厂商的默认生图模型 */}
+          <div className="ml-auto flex items-center gap-1.5">
+            {imageProviders.length === 0 ? (
+              <>
+                <span className="text-xs text-destructive">还没有可用的生图模型</span>
+                <Button asChild type="button" variant="outline" size="sm" className="h-7 text-xs">
+                  <Link to="/settings">去模型设置配置</Link>
+                </Button>
+              </>
             ) : (
-              <SelectControl
-                className="rounded-md border bg-background px-2.5 py-1 text-xs"
-                value={resolvedProvider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-              >
-                {providerOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectControl>
+              <>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">生图</span>
+                <SelectControl
+                  aria-label="生图厂商"
+                  className="rounded-md border bg-background px-2 py-1 text-xs"
+                  value={resolvedProvider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                >
+                  {providerOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </SelectControl>
+                <SelectControl
+                  aria-label="生图模型"
+                  className="rounded-md border bg-background px-2 py-1 text-xs max-w-[200px]"
+                  disabled={imageModelMut.isPending}
+                  value={effectiveImageModel}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next && next !== activeImageProvider?.currentImageModel && activeImageProvider) {
+                      imageModelMut.mutate({ provider: activeImageProvider.provider, imageModel: next });
+                    }
+                  }}
+                >
+                  {imageModelOptions.length === 0 && <option value="">请先选择模型</option>}
+                  {imageModelOptions.map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </SelectControl>
+              </>
             )}
           </div>
         </div>
