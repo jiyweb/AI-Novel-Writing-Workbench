@@ -1,0 +1,199 @@
+import type { ChapterRuntimePackage } from "@ai-novel/shared/types/chapterRuntime";
+import type { QualityScore, ReplanRecommendation, ReviewIssue } from "@ai-novel/shared/types/novel";
+import type { Prisma } from "@prisma/client";
+import {
+  buildChapterQualityLoopAssessment,
+  type ChapterQualityLoopAssessment,
+} from "@ai-novel/shared/types/chapterQualityLoop";
+import { prisma } from "../../../db/prisma";
+import { directorAutomationLedgerEventService } from "../director/runtime/DirectorAutomationLedgerEventService";
+import type {
+  ChapterRepairSelectionRecord,
+  QualityDebtAttribution,
+} from "../runtime/chapterRuntimePipeline";
+import { chapterLifecycleService } from "../runtime/lifecycle/ChapterLifecycleService";
+
+interface RecordChapterQualityLoopInput {
+  novelId: string;
+  chapterId: string;
+  chapterOrder?: number | null;
+  score: QualityScore;
+  issues: ReviewIssue[];
+  runtimePackage?: ChapterRuntimePackage | null;
+  replanRecommendation?: ReplanRecommendation | null;
+  source: "manual_review" | "pipeline_review" | "repair_recheck";
+  terminalAction?: "defer_and_continue" | null;
+  taskId?: string | null;
+  runId?: string | null;
+  /** 阶段0 归因数据：仅在 terminalAction=defer_and_continue 时有意义 */
+  qualityDebtAttribution?: QualityDebtAttribution | null;
+  repairSelection?: ChapterRepairSelectionRecord | null;
+}
+
+type ChapterQualityLoopChapter = {
+  content?: string | null;
+  riskFlags: string | null;
+  repairHistory: string | null;
+  chapterStatus: string | null;
+  generationState?: string | null;
+};
+
+function parseJsonObject(value: string | null | undefined): Record<string, unknown> {
+  if (!value?.trim()) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function serializeRiskFlags(
+  previous: string | null | undefined,
+  assessment: ChapterQualityLoopAssessment,
+  source: RecordChapterQualityLoopInput["source"],
+  terminalAction?: RecordChapterQualityLoopInput["terminalAction"],
+  qualityDebtAttribution?: RecordChapterQualityLoopInput["qualityDebtAttribution"],
+  repairSelection?: RecordChapterQualityLoopInput["repairSelection"],
+): string {
+  const parsed = parseJsonObject(previous);
+  return JSON.stringify({
+    ...parsed,
+    qualityLoop: {
+      ...assessment,
+      source,
+      ...(terminalAction ? { terminalAction } : {}),
+      ...(qualityDebtAttribution ? { qualityDebtAttribution } : {}),
+      ...(repairSelection ? { repairSelection } : {}),
+    },
+  });
+}
+
+function appendRepairHistory(
+  previous: string | null | undefined,
+  assessment: ChapterQualityLoopAssessment,
+  terminalAction?: RecordChapterQualityLoopInput["terminalAction"],
+): string | undefined {
+  if (assessment.recommendedAction === "continue") {
+    return undefined;
+  }
+  const line = [
+    `[quality_loop ${assessment.evaluatedAt}]`,
+    `status=${assessment.overallStatus}`,
+    `action=${assessment.recommendedAction}`,
+    terminalAction ? `terminal=${terminalAction}` : "",
+    assessment.signals
+      .filter((signal) => signal.status !== "valid")
+      .map((signal) => `${signal.artifactType}:${signal.status}`)
+      .join(","),
+  ].filter(Boolean).join(" ");
+  const lines = [
+    ...(previous?.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) ?? []),
+    line,
+  ].slice(-12);
+  return lines.join("\n");
+}
+
+function resolveContinuableChapterState(
+  chapter: Pick<ChapterQualityLoopChapter, "content" | "chapterStatus" | "generationState">,
+): Pick<Prisma.ChapterUpdateInput, "chapterStatus" | "generationState"> {
+  if (!chapter.content?.trim()) {
+    return {};
+  }
+  return {
+    chapterStatus: "completed",
+    generationState: "approved",
+  };
+}
+
+function resolveBlockedChapterState(
+  source: RecordChapterQualityLoopInput["source"],
+): Pick<Prisma.ChapterUpdateInput, "chapterStatus" | "generationState"> {
+  return {
+    chapterStatus: "needs_repair",
+    ...(source === "pipeline_review" ? {} : { generationState: "reviewed" }),
+  };
+}
+
+export function buildChapterQualityLoopChapterUpdate(
+  chapter: ChapterQualityLoopChapter,
+  assessment: ChapterQualityLoopAssessment,
+  source: RecordChapterQualityLoopInput["source"],
+  terminalAction?: RecordChapterQualityLoopInput["terminalAction"],
+  qualityDebtAttribution?: RecordChapterQualityLoopInput["qualityDebtAttribution"],
+  repairSelection?: RecordChapterQualityLoopInput["repairSelection"],
+): Prisma.ChapterUpdateInput {
+  const nextRepairHistory = appendRepairHistory(chapter.repairHistory, assessment, terminalAction);
+  const shouldContinueChapter = assessment.recommendedAction === "continue" || terminalAction === "defer_and_continue";
+  const continuableChapterState = shouldContinueChapter
+    ? resolveContinuableChapterState(chapter)
+    : {};
+  return {
+    riskFlags: serializeRiskFlags(
+      chapter.riskFlags,
+      assessment,
+      source,
+      terminalAction,
+      qualityDebtAttribution,
+      repairSelection,
+    ),
+    ...(nextRepairHistory !== undefined ? { repairHistory: nextRepairHistory } : {}),
+    ...(shouldContinueChapter ? continuableChapterState : resolveBlockedChapterState(source)),
+  };
+}
+
+export class ChapterQualityLoopService {
+  async recordAssessment(input: RecordChapterQualityLoopInput): Promise<ChapterQualityLoopAssessment> {
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: input.chapterId, novelId: input.novelId },
+      select: {
+        id: true,
+        order: true,
+        content: true,
+        riskFlags: true,
+        repairHistory: true,
+        chapterStatus: true,
+        generationState: true,
+      },
+    });
+    if (!chapter) {
+      throw new Error("章节不存在，无法记录质量闭环状态。");
+    }
+
+    const assessment = buildChapterQualityLoopAssessment({
+      chapterId: input.chapterId,
+      chapterOrder: input.chapterOrder ?? chapter.order,
+      score: input.score,
+      issues: input.issues,
+      runtimePackage: input.runtimePackage,
+      replanRecommendation: input.replanRecommendation,
+    });
+    const terminalAction = assessment.recommendedAction === "continue"
+      ? null
+      : input.terminalAction ?? null;
+    await chapterLifecycleService.applyQualityAssessmentState({
+      chapterId: input.chapterId,
+      data: buildChapterQualityLoopChapterUpdate(
+        chapter,
+        assessment,
+        input.source,
+        terminalAction,
+        input.qualityDebtAttribution,
+        input.repairSelection,
+      ),
+    });
+    await directorAutomationLedgerEventService.recordQualityLoopAssessment({
+      taskId: input.taskId,
+      runId: input.runId,
+      novelId: input.novelId,
+      assessment,
+    }).catch(() => null);
+    return assessment;
+  }
+}
+
+export const chapterQualityLoopService = new ChapterQualityLoopService();

@@ -1,0 +1,227 @@
+import path from "node:path";
+import { buildCharacterImagePrompt } from "@ai-novel/shared/imagePrompt";
+import type { ImageAsset, ImageGenerationTask } from "@ai-novel/shared/types/image";
+import { AppError } from "../../middleware/errorHandler";
+import { buildImageAssetPublicUrl, parseImageAssetMetadata } from "./imageAssetStorage";
+
+export function isMissingTableError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2021"
+  );
+}
+
+export function normalizeImageGenerationError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.slice(0, 1000);
+  }
+  return "Unknown image generation error.";
+}
+
+export function toImageTask(row: Awaited<{
+  id: string;
+  sceneType: string;
+  baseCharacterId: string | null;
+  novelId: string | null;
+  bookAnalysisCharacterId: string | null;
+  provider: string;
+  model: string;
+  prompt: string;
+  negativePrompt: string | null;
+  stylePreset: string | null;
+  size: string;
+  imageCount: number;
+  seed: number | null;
+  status: string;
+  progress: number;
+  retryCount: number;
+  maxRetries: number;
+  heartbeatAt: Date | null;
+  currentStage: string | null;
+  currentItemKey: string | null;
+  currentItemLabel: string | null;
+  cancelRequestedAt: Date | null;
+  error: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+} | null>): ImageGenerationTask {
+  if (!row) {
+    throw new AppError("Image task not found.", 404);
+  }
+
+  const baseTask = {
+    id: row.id,
+    provider: row.provider,
+    model: row.model,
+    prompt: row.prompt,
+    negativePrompt: row.negativePrompt,
+    stylePreset: row.stylePreset,
+    size: row.size,
+    imageCount: row.imageCount,
+    seed: row.seed,
+    status: row.status as ImageGenerationTask["status"],
+    progress: row.progress,
+    retryCount: row.retryCount,
+    maxRetries: row.maxRetries,
+    heartbeatAt: row.heartbeatAt?.toISOString() ?? null,
+    currentStage: row.currentStage,
+    currentItemKey: row.currentItemKey,
+    currentItemLabel: row.currentItemLabel,
+    cancelRequestedAt: row.cancelRequestedAt?.toISOString() ?? null,
+    error: row.error,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    finishedAt: row.finishedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+
+  switch (row.sceneType) {
+    case "character":
+      return {
+        ...baseTask,
+        sceneType: "character",
+        baseCharacterId: row.baseCharacterId ?? "",
+        novelId: null,
+        bookAnalysisCharacterId: null,
+      };
+    case "novel_cover":
+      return {
+        ...baseTask,
+        sceneType: "novel_cover",
+        novelId: row.novelId ?? "",
+        baseCharacterId: null,
+        bookAnalysisCharacterId: null,
+      };
+    case "chapter_illustration":
+      return {
+        ...baseTask,
+        sceneType: "chapter_illustration",
+        baseCharacterId: row.baseCharacterId,
+        novelId: row.novelId,
+        bookAnalysisCharacterId: row.bookAnalysisCharacterId,
+      };
+    case "book_analysis_character":
+      return {
+        ...baseTask,
+        sceneType: "book_analysis_character",
+        bookAnalysisCharacterId: row.bookAnalysisCharacterId ?? "",
+        baseCharacterId: null,
+        novelId: null,
+      };
+    default:
+      throw new AppError(`Unsupported image task scene type: ${row.sceneType}`, 500);
+  };
+}
+
+export function toImageAsset(row: Awaited<{
+  id: string;
+  taskId: string;
+  sceneType: string;
+  baseCharacterId: string | null;
+  novelId: string | null;
+  bookAnalysisCharacterId: string | null;
+  provider: string;
+  model: string;
+  url: string;
+  mimeType: string | null;
+  width: number | null;
+  height: number | null;
+  seed: number | null;
+  prompt: string | null;
+  isPrimary: boolean;
+  sortOrder: number;
+  metadata: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+} | null>): ImageAsset {
+  if (!row) {
+    throw new AppError("Image asset not found.", 404);
+  }
+  const metadata = parseImageAssetMetadata(row.metadata);
+  const isStoredAsset = Boolean(
+    metadata.localPath
+      || metadata.storageKey
+      || path.isAbsolute(row.url)
+      || !/^[a-z][a-z0-9+.-]*:/i.test(row.url),
+  );
+  const sourceUrl = metadata.sourceUrl ?? (isStoredAsset ? null : row.url);
+
+  const baseAsset = {
+    id: row.id,
+    taskId: row.taskId,
+    provider: row.provider,
+    model: row.model,
+    url: isStoredAsset ? buildImageAssetPublicUrl(row.id) : row.url,
+    localPath: metadata.localPath ?? (path.isAbsolute(row.url) ? row.url : null),
+    sourceUrl,
+    mimeType: row.mimeType,
+    width: row.width,
+    height: row.height,
+    seed: row.seed,
+    prompt: row.prompt,
+    isPrimary: row.isPrimary,
+    sortOrder: row.sortOrder,
+    metadata: row.metadata,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+
+  switch (row.sceneType) {
+    case "character":
+      return {
+        ...baseAsset,
+        sceneType: "character",
+        baseCharacterId: row.baseCharacterId ?? "",
+        novelId: null,
+        bookAnalysisCharacterId: null,
+      };
+    case "novel_cover":
+      return {
+        ...baseAsset,
+        sceneType: "novel_cover",
+        novelId: row.novelId ?? "",
+        baseCharacterId: null,
+        bookAnalysisCharacterId: null,
+      };
+    case "chapter_illustration":
+      return {
+        ...baseAsset,
+        sceneType: "chapter_illustration",
+        baseCharacterId: row.baseCharacterId,
+        novelId: row.novelId,
+        bookAnalysisCharacterId: row.bookAnalysisCharacterId,
+      };
+    case "book_analysis_character":
+      return {
+        ...baseAsset,
+        sceneType: "book_analysis_character",
+        bookAnalysisCharacterId: row.bookAnalysisCharacterId ?? "",
+        baseCharacterId: null,
+        novelId: null,
+      };
+    default:
+      throw new AppError(`Unsupported image asset scene type: ${row.sceneType}`, 500);
+  };
+}
+
+export function buildCharacterPrompt(
+  prompt: string,
+  stylePreset: string | undefined,
+  character: {
+    name: string;
+    role: string;
+    personality: string;
+    appearance: string | null;
+    background: string;
+  },
+): string {
+  return buildCharacterImagePrompt({
+    prompt,
+    stylePreset,
+    character,
+  });
+}

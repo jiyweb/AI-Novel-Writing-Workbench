@@ -1,0 +1,319 @@
+import type { PromptContextBlock } from "../../core/promptTypes";
+
+function toOptionalText(value: string | null | undefined): string | null {
+  const normalized = value?.trim() ?? "";
+  return normalized || null;
+}
+
+function estimateTokens(content: string): number {
+  return Math.max(1, Math.ceil(content.length / 2));
+}
+
+function createBlock(input: {
+  id: string;
+  group: string;
+  priority: number;
+  content: string | null | undefined;
+  required?: boolean;
+}): PromptContextBlock | null {
+  const content = toOptionalText(input.content);
+  if (!content) {
+    return null;
+  }
+  return {
+    id: input.id,
+    group: input.group,
+    priority: input.priority,
+    required: input.required ?? false,
+    estimatedTokens: estimateTokens(content),
+    content,
+  };
+}
+
+function joinLines(lines: Array<string | null | undefined>): string | null {
+  const normalized = lines
+    .map((line) => toOptionalText(line))
+    .filter((line): line is string => Boolean(line));
+  return normalized.length > 0 ? normalized.join("\n") : null;
+}
+
+function stringifyJsonLike(value: string | null | undefined, fallback: string): string {
+  return toOptionalText(value) ?? fallback;
+}
+
+export interface CharacterCastContextBlocksInput {
+  projectTitle: string;
+  storyInput: string;
+  genreName?: string | null;
+  storyModeBlock?: string | null;
+  styleTone?: string | null;
+  narrativePov?: string | null;
+  pacePreference?: string | null;
+  emotionIntensity?: string | null;
+  corePromise?: string | null;
+  coreSetting?: string | null;
+  characterArcs?: string | null;
+  worldRules?: string | null;
+  worldStage?: string | null;
+  worldFocusHints?: {
+    preferFaction?: string | null;
+    forceCompliance?: boolean;
+  } | null;
+  storyDecomposition?: string | null;
+  constraintEngine?: string | null;
+  bookContract?: {
+    readingPromise: string;
+    protagonistFantasy: string;
+    coreSellingPoint: string;
+    chapter3Payoff: string;
+    chapter10Payoff: string;
+    chapter30Payoff: string;
+    escalationLadder: string;
+    relationshipMainline: string;
+  } | null;
+  existingCharacterNames?: string[];
+}
+
+function formatWorldFocusHints(input: {
+  preferFaction?: string | null;
+  forceCompliance?: boolean;
+} | null | undefined): string | null {
+  const preferFaction = toOptionalText(input?.preferFaction);
+  const lines = [
+    preferFaction ? `优先从「${preferFaction}」相关身份、利益链、敌友关系或压力来源中设计角色。` : null,
+    input?.forceCompliance
+      ? "必须进行世界规则合规检查：角色身份、能力来源、阵营归属、地点和禁忌搭配都不能越过本书世界边界。"
+      : null,
+  ].filter((line): line is string => Boolean(line));
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+export function buildCharacterCastContextBlocks(input: CharacterCastContextBlocksInput): PromptContextBlock[] {
+  const blocks = [
+    createBlock({
+      id: "character_cast_story_input",
+      group: "idea_seed",
+      priority: 100,
+      required: true,
+      content: joinLines([
+        "【故事输入】",
+        input.storyInput,
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_project_context",
+      group: "project_context",
+      priority: 95,
+      content: joinLines([
+        "【项目上下文】",
+        `项目标题：${input.projectTitle}`,
+        `题材：${toOptionalText(input.genreName) ?? "未指定"}`,
+        input.storyModeBlock ? `故事模式：\n${input.storyModeBlock}` : "故事模式：无",
+        `文风基调：${toOptionalText(input.styleTone) ?? "未指定"}`,
+        `叙事视角：${toOptionalText(input.narrativePov) ?? "未指定"}`,
+        `节奏偏好：${toOptionalText(input.pacePreference) ?? "未指定"}`,
+        `情绪强度：${toOptionalText(input.emotionIntensity) ?? "未指定"}`,
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_book_contract",
+      group: "book_contract",
+      priority: 92,
+      content: input.bookContract ? joinLines([
+        "【Book Contract 约束】",
+        `阅读承诺：${input.bookContract.readingPromise}`,
+        `主角幻想：${input.bookContract.protagonistFantasy}`,
+        `核心卖点：${input.bookContract.coreSellingPoint}`,
+        `第3章兑现：${input.bookContract.chapter3Payoff}`,
+        `第10章兑现：${input.bookContract.chapter10Payoff}`,
+        `第30章兑现：${input.bookContract.chapter30Payoff}`,
+        `升级阶梯：${input.bookContract.escalationLadder}`,
+        `关系主线：${input.bookContract.relationshipMainline}`,
+      ]) : null,
+    }),
+    createBlock({
+      id: "character_cast_macro_constraints",
+      group: "macro_constraints",
+      priority: 90,
+      content: joinLines([
+        "【故事宏观约束】",
+        `核心承诺：${toOptionalText(input.corePromise) ?? "暂无"}`,
+        `核心设定：${toOptionalText(input.coreSetting) ?? "暂无"}`,
+        `角色弧提示：${toOptionalText(input.characterArcs) ?? "暂无"}`,
+        `世界规则：${toOptionalText(input.worldRules) ?? "暂无"}`,
+        `宏观拆解：${stringifyJsonLike(input.storyDecomposition, "暂无")}`,
+        `约束引擎：${stringifyJsonLike(input.constraintEngine, "暂无")}`,
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_world_stage",
+      group: "world_stage",
+      priority: 88,
+      content: joinLines([
+        "【世界舞台】",
+        toOptionalText(input.worldStage) ?? "本书世界未整理，请优先从故事输入和书级约束推断人物舞台。",
+        formatWorldFocusHints(input.worldFocusHints),
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_protagonist_anchor",
+      group: "protagonist_anchor",
+      priority: 99,
+      required: true,
+      content: joinLines([
+        "【主角锚点】",
+        "主角必须落成可直接进入正文的具体人物，不允许写成功能位或抽象槽位。",
+        "请直接依据故事输入、项目上下文、Book Contract 和宏观约束理解主角身份、时代舞台、制度压力与关系位置。",
+        "如果输入里存在题材卖点、读者体验、身份伪装或终局真相，请用整体语义判断它们如何落到具体人物上，不要把题材词当成人名或角色身份。",
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_hidden_identity",
+      group: "hidden_identity_anchor",
+      priority: 97,
+      content: joinLines([
+        "【隐藏身份 / 真相锚点】",
+        "如果故事包含身份反转、伪装、命运真相或历史真名，请用 AI 语义理解判断这条线应由哪个具体角色承接。",
+        "不能依赖关键词、正则或固定文本片段抽取身份线索；无法稳定判断时，优先生成可用角色候选，并把不确定性写进角色职责或推荐理由。",
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_forbidden_names",
+      group: "forbidden_names",
+      priority: 80,
+      content: joinLines([
+        "【命名边界】",
+        `禁止复用的现有角色名：${(input.existingCharacterNames ?? []).filter(Boolean).join("、") || "无"}`,
+      ]),
+    }),
+    createBlock({
+      id: "character_cast_output_policy",
+      group: "output_policy",
+      priority: 100,
+      required: true,
+      content: joinLines([
+        "【输出策略】",
+        "name 只能写可入戏的人名、宫廷称谓、阵营职称、江湖称号或历史语境内成立的稳定称呼。",
+        "禁止把“谜团催化剂、知识导师位、外部威胁位、情感位、关系变量、功能位”这类抽象职责名写进 name。",
+        "storyFunction 才负责写叙事职责，name 不负责承载功能描述。",
+        "每个角色都必须输出 gender；拿不准时填 unknown，不能省略。",
+        "如果是历史 / 穿越 / 宫廷题材，阵容必须体现时代身份、制度压迫、权力链条和身份反差，不能退化成通用功能网络。",
+      ]),
+    }),
+  ];
+
+  return blocks.filter((block): block is PromptContextBlock => Boolean(block));
+}
+
+export interface CharacterCastSupplementalContextBlocksInput {
+  projectTitle: string;
+  modeLabel: string;
+  targetRoleLabel: string;
+  requestedCountText: string;
+  userPrompt?: string | null;
+  storyInput?: string | null;
+  genreName?: string | null;
+  storyModeBlock?: string | null;
+  styleTone?: string | null;
+  narrativePov?: string | null;
+  pacePreference?: string | null;
+  emotionIntensity?: string | null;
+  corePromise?: string | null;
+  coreSetting?: string | null;
+  characterArcs?: string | null;
+  worldRules?: string | null;
+  worldStage?: string | null;
+  worldFocusHints?: {
+    preferFaction?: string | null;
+    forceCompliance?: boolean;
+  } | null;
+  storyDecomposition?: string | null;
+  constraintEngine?: string | null;
+  existingCharactersText?: string | null;
+  anchorCharactersText?: string | null;
+  relationsText?: string | null;
+  forbiddenNames?: string[];
+}
+
+export function buildSupplementalCharacterContextBlocks(
+  input: CharacterCastSupplementalContextBlocksInput,
+): PromptContextBlock[] {
+  const blocks = [
+    createBlock({
+      id: "supplemental_character_request",
+      group: "idea_seed",
+      priority: 100,
+      required: true,
+      content: joinLines([
+        "【补位请求】",
+        `项目标题：${input.projectTitle}`,
+        `补位模式：${input.modeLabel}`,
+        `目标角色功能：${input.targetRoleLabel}`,
+        input.requestedCountText,
+        `用户额外说明：${toOptionalText(input.userPrompt) ?? "无"}`,
+      ]),
+    }),
+    createBlock({
+      id: "supplemental_character_story_context",
+      group: "project_context",
+      priority: 90,
+      content: joinLines([
+        "【故事上下文】",
+        `故事输入：${toOptionalText(input.storyInput) ?? "暂无明确故事输入，请结合现有角色与世界舞台推断。 "}`,
+        `题材：${toOptionalText(input.genreName) ?? "未指定"}`,
+        input.storyModeBlock ? `故事模式：\n${input.storyModeBlock}` : "故事模式：无",
+        `文风基调：${toOptionalText(input.styleTone) ?? "未指定"}`,
+        `叙事视角：${toOptionalText(input.narrativePov) ?? "未指定"}`,
+        `节奏偏好：${toOptionalText(input.pacePreference) ?? "未指定"}`,
+        `情绪强度：${toOptionalText(input.emotionIntensity) ?? "未指定"}`,
+        `核心承诺：${toOptionalText(input.corePromise) ?? "暂无"}`,
+        `核心设定：${toOptionalText(input.coreSetting) ?? "暂无"}`,
+        `角色弧提示：${toOptionalText(input.characterArcs) ?? "暂无"}`,
+        `世界规则：${toOptionalText(input.worldRules) ?? "暂无"}`,
+      ]),
+    }),
+    createBlock({
+      id: "supplemental_character_world_stage",
+      group: "world_stage",
+      priority: 85,
+      content: joinLines([
+        "【世界与宏观约束】",
+        toOptionalText(input.worldStage) ?? "本书世界未整理。",
+        formatWorldFocusHints(input.worldFocusHints),
+        `宏观拆解：${stringifyJsonLike(input.storyDecomposition, "暂无")}`,
+        `约束引擎：${stringifyJsonLike(input.constraintEngine, "暂无")}`,
+      ]),
+    }),
+    createBlock({
+      id: "supplemental_character_existing_cast",
+      group: "existing_cast",
+      priority: 95,
+      content: joinLines([
+        "【已有角色】",
+        toOptionalText(input.existingCharactersText) ?? "当前还没有已创建角色。",
+        "【锚点角色】",
+        toOptionalText(input.anchorCharactersText) ?? "当前没有明确选中的锚点角色。",
+      ]),
+    }),
+    createBlock({
+      id: "supplemental_character_relations",
+      group: "relation_context",
+      priority: 88,
+      content: joinLines([
+        "【已知结构化关系】",
+        toOptionalText(input.relationsText) ?? "暂无。",
+      ]),
+    }),
+    createBlock({
+      id: "supplemental_character_forbidden_names",
+      group: "forbidden_names",
+      priority: 80,
+      content: joinLines([
+        "【命名边界】",
+        `禁止复用的角色名：${(input.forbiddenNames ?? []).filter(Boolean).join("、") || "无"}`,
+      ]),
+    }),
+  ];
+
+  return blocks.filter((block): block is PromptContextBlock => Boolean(block));
+}

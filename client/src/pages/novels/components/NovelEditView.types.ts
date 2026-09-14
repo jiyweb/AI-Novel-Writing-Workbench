@@ -1,0 +1,670 @@
+import type {
+  BaseCharacter,
+  AuditReport,
+  Chapter,
+  ReplanRecommendation,
+  ReplanResult,
+  StoryPlan,
+  StoryStateSnapshot,
+  Character,
+  CharacterTimeline,
+  CharacterVisibleProfileBatchResult,
+  CharacterVisibleProfileSuggestion,
+  NovelBible,
+  PayoffLedgerResponse,
+  PipelineJob,
+  PlotBeat,
+  QualityScore,
+  SupplementalCharacterCandidate,
+  SupplementalCharacterGenerateInput,
+  SupplementalCharacterGenerationResult,
+  VolumeImpactResult,
+  VolumeBeatSheet,
+  VolumeChapterListGenerationMode,
+  VolumePlan,
+  VolumePlanningReadiness,
+  VolumePlanDiff,
+  VolumePlanVersionSummary,
+  VolumeRebalanceDecision,
+  VolumeStrategyPlan,
+  VolumeCritiqueReport,
+  VolumeCountGuidance,
+  VolumeSyncPreview,
+} from "@ai-novel/shared/types/novel";
+import type {
+  StoryConstraintEngine,
+  StoryMacroFieldValue,
+  StoryDecomposition,
+  StoryExpansion,
+  StoryMacroField,
+  StoryMacroIssue,
+  StoryMacroLocks,
+  StoryMacroState,
+} from "@ai-novel/shared/types/storyMacro";
+import type { BookAnalysisSectionKey } from "@ai-novel/shared/types/bookAnalysis";
+import type { LLMProvider } from "@ai-novel/shared/types/llm";
+import type { NovelExportDownloadFormat, NovelExportFormat } from "@ai-novel/shared/types/novelExport";
+import type { ChapterRuntimePackage } from "@ai-novel/shared/types/chapterRuntime";
+import type {
+  CharacterResourceContext,
+  CharacterResourceLedgerItem,
+  CharacterResourceProposalSummary,
+} from "@ai-novel/shared/types/characterResource";
+import type { TimelineCheckReport, TimelineContextForChapter } from "@ai-novel/shared/types/timeline";
+import type { StoryWorldSliceOverrides, StoryWorldSliceView } from "@ai-novel/shared/types/storyWorldSlice";
+import type { UnifiedTaskDetail } from "@ai-novel/shared/types/task";
+import type { AutoDirectorAction, AutoDirectorFollowUpDetail } from "@ai-novel/shared/types/autoDirectorFollowUp";
+import type {
+  DirectorManualEditImpact,
+  DirectorBookAutomationAction,
+  DirectorBookAutomationProjection,
+  DirectorRuntimeSnapshot,
+  DirectorTaskSnapshot,
+} from "@ai-novel/shared/types/directorRuntime";
+import type { ChapterExecutionBackgroundActivity } from "./chapterExecution.shared";
+import type { QuickCharacterCreatePayload } from "./characterPanel.utils";
+import type { ChapterReviewResult } from "../chapterPlanning.shared";
+import type { ChapterDetailBundleRequest } from "../chapterDetailPlanning.shared";
+import type { StructuredSyncOptions } from "../novelEdit.utils";
+import type { NovelBasicFormState } from "../novelBasicInfo.shared";
+import type { ExistingOutlineChapter } from "../volumePlan.utils";
+import type { AITakeoverAction } from "@/components/workflow/AITakeoverContainer";
+import type { LLMSelectorValue } from "@/components/common/LLMSelector";
+import type { SSEFrame } from "@ai-novel/shared/types/api";
+import type {
+  NovelWorldGenerateInput,
+  NovelWorldImportInput,
+  NovelWorldManualInput,
+  NovelWorldSaveToLibraryInput,
+  NovelWorldSyncDiff,
+  NovelWorldSyncInput,
+  NovelWorldView,
+} from "@ai-novel/shared/types/novelWorld";
+import type { ReactNode } from "react";
+
+export interface StructuredChapterListGenerationRequest {
+  generationMode?: VolumeChapterListGenerationMode;
+  targetBeatKey?: string;
+}
+
+export interface BasicTabProps {
+  novelId: string;
+  basicForm: NovelBasicFormState;
+  genreOptions: Array<{ id: string; label: string; path: string }>;
+  storyModeOptions: Array<{
+    id: string;
+    name: string;
+    label: string;
+    path: string;
+    description?: string | null;
+    profile: {
+      coreDrive: string;
+      readerReward: string;
+    };
+  }>;
+  worldOptions: Array<{ id: string; name: string }>;
+  sourceNovelOptions: Array<{ id: string; title: string }>;
+  sourceKnowledgeOptions: Array<{ id: string; title: string }>;
+  sourceNovelBookAnalysisOptions: Array<{
+    id: string;
+    title: string;
+    documentTitle: string;
+    documentVersionNumber: number;
+  }>;
+  isLoadingSourceNovelBookAnalyses: boolean;
+  availableBookAnalysisSections: Array<{ key: BookAnalysisSectionKey; title: string }>;
+  novelWorldView?: NovelWorldView | null;
+  novelWorldSyncDiff?: NovelWorldSyncDiff | null;
+  worldSliceView?: StoryWorldSliceView | null;
+  worldSliceMessage: string;
+  isLoadingNovelWorld: boolean;
+  isImportingNovelWorld: boolean;
+  isGeneratingNovelWorld: boolean;
+  isCreatingManualNovelWorld: boolean;
+  isSavingNovelWorldToLibrary: boolean;
+  isLoadingNovelWorldSyncDiff: boolean;
+  isSyncingNovelWorld: boolean;
+  isRefreshingWorldSlice: boolean;
+  isSavingWorldSliceOverrides: boolean;
+  onFormChange: (patch: Partial<BasicTabProps["basicForm"]>) => void;
+  onSave: () => void;
+  onImportNovelWorld: (payload: NovelWorldImportInput) => void;
+  onCreateManualNovelWorld: (payload?: NovelWorldManualInput) => void;
+  onGenerateNovelWorld: (payload: NovelWorldGenerateInput) => void;
+  onSaveNovelWorldToLibrary: (payload?: NovelWorldSaveToLibraryInput) => void;
+  onSyncNovelWorld: (payload: NovelWorldSyncInput) => void;
+  onRefreshWorldSlice: () => void;
+  onSaveWorldSliceOverrides: (patch: StoryWorldSliceOverrides) => void;
+  isSaving: boolean;
+  projectQuickStart?: ReactNode;
+  directorTakeoverEntry?: ReactNode;
+}
+
+export interface StoryMacroTabProps {
+  storyInput: string;
+  onStoryInputChange: (value: string) => void;
+  expansion: StoryExpansion | null;
+  decomposition: StoryDecomposition;
+  constraints: string[];
+  issues: StoryMacroIssue[];
+  lockedFields: StoryMacroLocks;
+  constraintEngine: StoryConstraintEngine | null;
+  state: StoryMacroState;
+  message: string;
+  hasPlan: boolean;
+  onFieldChange: (field: StoryMacroField, value: StoryMacroFieldValue) => void;
+  onToggleLock: (field: StoryMacroField) => void;
+  onDecompose: () => void;
+  onRegenerateField: (field: StoryMacroField) => void;
+  regeneratingField: StoryMacroField | "";
+  onBuildConstraintEngine: () => void;
+  onSaveEdits: () => void;
+  onStateChange: (field: keyof StoryMacroState, value: string | number) => void;
+  onSaveState: () => void;
+  isDecomposing: boolean;
+  isBuilding: boolean;
+  isSaving: boolean;
+  isSavingState: boolean;
+  directorTakeoverEntry?: ReactNode;
+}
+
+export interface OutlineTabViewProps {
+  worldInjectionSummary: string | null;
+  hasCharacters: boolean;
+  hasUnsavedVolumeDraft: boolean;
+  generationNotice: string;
+  readiness: VolumePlanningReadiness;
+  volumeCountGuidance: VolumeCountGuidance;
+  customVolumeCountEnabled: boolean;
+  customVolumeCountInput: string;
+  onCustomVolumeCountEnabledChange: (enabled: boolean) => void;
+  onCustomVolumeCountInputChange: (value: string) => void;
+  onApplyCustomVolumeCount: () => void;
+  onRestoreSystemRecommendedVolumeCount: () => void;
+  strategyPlan: VolumeStrategyPlan | null;
+  critiqueReport: VolumeCritiqueReport | null;
+  isGeneratingStrategy: boolean;
+  onGenerateStrategy: () => void;
+  isCritiquingStrategy: boolean;
+  onCritiqueStrategy: () => void;
+  isGeneratingSkeleton: boolean;
+  onGenerateSkeleton: () => void;
+  onGoToCharacterTab: () => void;
+  onGoToStructuredTab: () => void;
+  latestStateSnapshot?: StoryStateSnapshot | null;
+  payoffLedger?: PayoffLedgerResponse | null;
+  characterResources?: CharacterResourceLedgerItem[];
+  draftText: string;
+  volumes: VolumePlan[];
+  onVolumeFieldChange: (volumeId: string, field: keyof Pick<VolumePlan, "title" | "summary" | "openingHook" | "mainPromise" | "primaryPressureSource" | "coreSellingPoint" | "escalationMode" | "protagonistChange" | "midVolumeRisk" | "climax" | "payoffType" | "nextVolumeHook" | "resetPoint">, value: string) => void;
+  onOpenPayoffsChange: (volumeId: string, value: string) => void;
+  onAddVolume: () => void;
+  onRemoveVolume: (volumeId: string) => void;
+  onMoveVolume: (volumeId: string, direction: -1 | 1) => void;
+  onSave: () => void;
+  isSaving: boolean;
+  volumeMessage: string;
+  volumeVersions: VolumePlanVersionSummary[];
+  selectedVersionId: string;
+  onSelectedVersionChange: (id: string) => void;
+  onCreateDraftVersion: () => void;
+  isCreatingDraftVersion: boolean;
+  onLoadSelectedVersionToDraft: () => void;
+  onActivateVersion: () => void;
+  isActivatingVersion: boolean;
+  onFreezeVersion: () => void;
+  isFreezingVersion: boolean;
+  onLoadVersionDiff: () => void;
+  isLoadingVersionDiff: boolean;
+  diffResult: VolumePlanDiff | null;
+  onAnalyzeDraftImpact: () => void;
+  isAnalyzingDraftImpact: boolean;
+  onAnalyzeVersionImpact: () => void;
+  isAnalyzingVersionImpact: boolean;
+  impactResult: VolumeImpactResult | null;
+  directorTakeoverEntry?: ReactNode;
+}
+
+export interface StructuredTabViewProps extends Omit<
+  OutlineTabViewProps,
+  | "volumeMessage"
+  | "volumeVersions"
+  | "selectedVersionId"
+  | "onSelectedVersionChange"
+  | "onCreateDraftVersion"
+  | "isCreatingDraftVersion"
+  | "onLoadSelectedVersionToDraft"
+  | "onActivateVersion"
+  | "isActivatingVersion"
+  | "onFreezeVersion"
+  | "isFreezingVersion"
+  | "onLoadVersionDiff"
+  | "isLoadingVersionDiff"
+  | "diffResult"
+  | "onAnalyzeDraftImpact"
+  | "isAnalyzingDraftImpact"
+  | "onAnalyzeVersionImpact"
+  | "isAnalyzingVersionImpact"
+  | "impactResult"
+> {
+  novelId: string;
+  directorTakeoverEntry?: ReactNode;
+  beatSheets: VolumeBeatSheet[];
+  rebalanceDecisions: VolumeRebalanceDecision[];
+  draftText: string;
+  isGeneratingBeatSheet: boolean;
+  onGenerateBeatSheet: (volumeId: string) => void;
+  isGeneratingChapterList: boolean;
+  generatingChapterListVolumeId: string;
+  generatingChapterListBeatKey: string;
+  generatingChapterListMode: VolumeChapterListGenerationMode | null;
+  onGenerateChapterList: (volumeId: string, request?: StructuredChapterListGenerationRequest) => void;
+  isGeneratingChapterDetail: boolean;
+  isGeneratingChapterDetailBundle: boolean;
+  generatingChapterDetailMode: "purpose" | "boundary" | "task_sheet" | "";
+  generatingChapterDetailChapterId: string;
+  chapterDetailFailure?: {
+    chapterId: string;
+    chapterOrder: number;
+    chapterTitle: string;
+    mode: "purpose" | "boundary" | "task_sheet";
+    message: string;
+  } | null;
+  onGenerateChapterDetail: (
+    volumeId: string,
+    chapterId: string,
+    mode: "purpose" | "boundary" | "task_sheet",
+  ) => void;
+  onGenerateChapterDetailBundle: (
+    volumeId: string,
+    request: ChapterDetailBundleRequest,
+  ) => void;
+  onRetryFailedChapterDetail?: () => void;
+  syncPreview: VolumeSyncPreview;
+  syncOptions: StructuredSyncOptions;
+  onSyncOptionsChange: (patch: Partial<StructuredSyncOptions>) => void;
+  onApplySync: (options: StructuredSyncOptions) => void;
+  isApplyingSync: boolean;
+  syncMessage: string;
+  chapters: ExistingOutlineChapter[];
+  onChapterFieldChange: (
+    volumeId: string,
+    chapterId: string,
+    field: keyof Pick<VolumePlan["chapters"][number], "title" | "summary" | "purpose" | "mustAvoid" | "taskSheet">,
+    value: string,
+  ) => void;
+  onChapterNumberChange: (
+    volumeId: string,
+    chapterId: string,
+    field: keyof Pick<VolumePlan["chapters"][number], "conflictLevel" | "revealLevel" | "targetWordCount">,
+    value: number | null,
+    options?: {
+      conflictLevelSource?: VolumePlan["chapters"][number]["conflictLevelSource"];
+    },
+  ) => void;
+  onChapterPayoffRefsChange: (volumeId: string, chapterId: string, value: string) => void;
+  onAddChapter: (volumeId: string) => void;
+  onRemoveChapter: (volumeId: string, chapterId: string) => void;
+  onMoveChapter: (volumeId: string, chapterId: string, direction: -1 | 1) => void;
+  onApplyBatch: (patch: { conflictLevel?: number; targetWordCount?: number; generateTaskSheet?: boolean }) => void;
+  onSave: () => void;
+  isSaving: boolean;
+}
+
+export interface ChapterTimelineViewData {
+  context: TimelineContextForChapter;
+  latestReport: TimelineCheckReport | null;
+}
+
+export interface ChapterTabViewProps {
+  novelId: string;
+  worldInjectionSummary: string | null;
+  hasCharacters: boolean;
+  chapters: Chapter[];
+  selectedChapterId: string;
+  selectedChapter?: Chapter;
+  onSelectChapter: (chapterId: string) => void;
+  onGoToCharacterTab: () => void;
+  onCreateChapter: () => void;
+  isCreatingChapter: boolean;
+  onRemoveChapter: (chapter: Chapter) => void;
+  removingChapterId?: string | null;
+  chapterOperationMessage: string;
+  strategy: {
+    runMode: "fast" | "polish";
+    wordSize: "short" | "medium" | "long";
+    conflictLevel: number;
+    pace: "slow" | "balanced" | "fast";
+    aiFreedom: "low" | "medium" | "high";
+  };
+  onStrategyChange: (
+    field: "runMode" | "wordSize" | "conflictLevel" | "pace" | "aiFreedom",
+    value: string | number,
+  ) => void;
+  onApplyStrategy: () => void;
+  isApplyingStrategy: boolean;
+  onGenerateSelectedChapter: () => void;
+  onRewriteChapter: () => void;
+  onExpandChapter: () => void;
+  onCompressChapter: () => void;
+  onSummarizeChapter: () => void;
+  onGenerateTaskSheet: () => void;
+  onGenerateSceneCards: () => void;
+  onGenerateChapterPlan: () => void;
+  onReplanChapter: () => void;
+  onRunFullAudit: () => void;
+  onCheckContinuity: () => void;
+  onCheckCharacterConsistency: () => void;
+  onCheckPacing: () => void;
+  onAutoRepair: () => void;
+  onStrengthenConflict: () => void;
+  onEnhanceEmotion: () => void;
+  onUnifyStyle: () => void;
+  onAddDialogue: () => void;
+  onAddDescription: () => void;
+  isGeneratingTaskSheet: boolean;
+  isGeneratingSceneCards: boolean;
+  isSummarizingChapter: boolean;
+  reviewActionKind?: "full_audit" | "continuity" | "character_consistency" | "pacing" | null;
+  repairActionKind?: "autoRepair" | "expand" | "compress" | "strengthenConflict" | "enhanceEmotion" | "unifyStyle" | "addDialogue" | "addDescription" | null;
+  generationActionKind?: "rewrite" | null;
+  isReviewingChapter: boolean;
+  isRepairingChapter: boolean;
+  reviewResult: ChapterReviewResult | null;
+  replanRecommendation?: ReplanRecommendation | null;
+  lastReplanResult?: ReplanResult | null;
+  chapterPlan?: StoryPlan | null;
+  latestStateSnapshot?: StoryStateSnapshot | null;
+  chapterStateSnapshot?: StoryStateSnapshot | null;
+  chapterResourceContext?: CharacterResourceContext | null;
+  isLoadingChapterResourceContext?: boolean;
+  chapterTimeline?: ChapterTimelineViewData | null;
+  isLoadingChapterTimeline?: boolean;
+  resourceWorkflowMode?: "auto_director" | "manual";
+  pendingCharacterResourceProposals?: CharacterResourceProposalSummary[];
+  onExtractChapterResources?: () => void;
+  isExtractingChapterResources?: boolean;
+  onConfirmCharacterResourceProposal?: (proposalId: string) => void;
+  onRejectCharacterResourceProposal?: (proposalId: string) => void;
+  confirmingCharacterResourceProposalId?: string;
+  rejectingCharacterResourceProposalId?: string;
+  chapterAuditReports: AuditReport[];
+  backgroundSyncActivities?: ChapterExecutionBackgroundActivity[];
+  isGeneratingChapterPlan: boolean;
+  isReplanningChapter: boolean;
+  isRunningFullAudit: boolean;
+  chapterQualityReport?: {
+    coherence: number;
+    repetition: number;
+    pacing: number;
+    voice: number;
+    engagement: number;
+    overall: number;
+    issues?: string | null;
+  };
+  chapterRuntimePackage?: ChapterRuntimePackage | null;
+  repairStreamContent: string;
+  isRepairStreaming: boolean;
+  repairStreamingChapterId?: string | null;
+  repairStreamingChapterLabel?: string | null;
+  repairRunStatus?: Extract<SSEFrame, { type: "run_status" }> | null;
+  onAbortRepair: () => void;
+  streamContent: string;
+  isStreaming: boolean;
+  streamingChapterId?: string | null;
+  streamingChapterLabel?: string | null;
+  chapterRunStatus?: Extract<SSEFrame, { type: "run_status" }> | null;
+  onAbortStream: () => void;
+  directorTakeoverEntry?: ReactNode;
+}
+
+export interface PipelineTabViewProps {
+  novelId: string;
+  worldInjectionSummary: string | null;
+  hasCharacters: boolean;
+  onGoToCharacterTab: () => void;
+  pipelineForm: {
+    startOrder: number;
+    endOrder: number;
+    maxRetries: number;
+    runMode: "fast" | "polish";
+    autoReview: boolean;
+    autoRepair: boolean;
+    skipCompleted: boolean;
+    qualityThreshold: number;
+    repairMode: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
+  };
+  onPipelineFormChange: (
+    field: "startOrder" | "endOrder" | "maxRetries" | "runMode" | "autoReview" | "autoRepair" | "skipCompleted" | "qualityThreshold" | "repairMode",
+    value: number | boolean | string,
+  ) => void;
+  maxOrder: number;
+  onGenerateBible: () => void;
+  onAbortBible: () => void;
+  isBibleStreaming: boolean;
+  bibleStreamContent: string;
+  onGenerateBeats: () => void;
+  onAbortBeats: () => void;
+  isBeatsStreaming: boolean;
+  beatsStreamContent: string;
+  onRunPipeline: (patch?: Partial<PipelineTabViewProps["pipelineForm"]>) => void;
+  isRunningPipeline: boolean;
+  pipelineMessage: string;
+  pipelineJob?: PipelineJob;
+  chapters: Chapter[];
+  selectedChapterId: string;
+  onSelectedChapterChange: (chapterId: string) => void;
+  onReviewChapter: () => void;
+  isReviewing: boolean;
+  onRepairChapter: () => void;
+  isRepairing: boolean;
+  onGenerateHook: () => void;
+  isGeneratingHook: boolean;
+  reviewResult: ChapterReviewResult | null;
+  repairBeforeContent: string;
+  repairAfterContent: string;
+  repairStreamContent: string;
+  isRepairStreaming: boolean;
+  onAbortRepair: () => void;
+  qualitySummary?: QualityScore;
+  chapterReports: Array<{
+    chapterId?: string | null;
+    coherence: number;
+    repetition: number;
+    pacing: number;
+    voice: number;
+    engagement: number;
+    overall: number;
+    issues?: string | null;
+  }>;
+  bible?: NovelBible | null;
+  plotBeats: PlotBeat[];
+  directorTakeoverEntry?: ReactNode;
+}
+
+export interface CharacterTabViewProps {
+  novelId: string;
+  llmProvider?: LLMProvider;
+  llmModel?: string;
+  characterMessage: string;
+  quickCharacterForm: { name: string; role: string };
+  onQuickCharacterFormChange: (field: "name" | "role", value: string) => void;
+  onQuickCreateCharacter: (payload: QuickCharacterCreatePayload) => void;
+  isQuickCreating: boolean;
+  onGenerateSupplementalCharacters: (payload: SupplementalCharacterGenerateInput) => Promise<{
+    data?: SupplementalCharacterGenerationResult;
+    message?: string;
+  }>;
+  isGeneratingSupplementalCharacters: boolean;
+  onApplySupplementalCharacter: (candidate: SupplementalCharacterCandidate) => Promise<{
+    data?: { character?: Character; relationCount?: number };
+    message?: string;
+  }>;
+  isApplyingSupplementalCharacter: boolean;
+  characters: Character[];
+  coreCharacterCount: number;
+  baseCharacters: BaseCharacter[];
+  selectedBaseCharacterId: string;
+  onSelectedBaseCharacterChange: (id: string) => void;
+  selectedBaseCharacter?: BaseCharacter;
+  importedBaseCharacterIds: Set<string>;
+  onImportBaseCharacter: () => void;
+  isImportingBaseCharacter: boolean;
+  selectedCharacterId: string;
+  onSelectedCharacterChange: (id: string) => void;
+  onDeleteCharacter: (id: string) => void;
+  isDeletingCharacter: boolean;
+  deletingCharacterId: string;
+  onSyncTimeline: () => void;
+  isSyncingTimeline: boolean;
+  onSyncAllTimeline: () => void;
+  isSyncingAllTimeline: boolean;
+  onEvolveCharacter: () => void;
+  isEvolvingCharacter: boolean;
+  onGenerateVisibleProfile: (userGuidance?: string) => void;
+  isGeneratingVisibleProfile: boolean;
+  visibleProfileSuggestion?: CharacterVisibleProfileSuggestion | null;
+  onApplyVisibleProfile: () => void;
+  isApplyingVisibleProfile: boolean;
+  onGenerateBatchVisibleProfiles: (userGuidance?: string) => void;
+  isGeneratingBatchVisibleProfiles: boolean;
+  batchVisibleProfileResult?: CharacterVisibleProfileBatchResult | null;
+  onApplyBatchVisibleProfiles: () => void;
+  isApplyingBatchVisibleProfiles: boolean;
+  onWorldCheck: () => void;
+  isCheckingWorld: boolean;
+  selectedCharacter?: Character;
+  characterResources?: CharacterResourceLedgerItem[];
+  pendingCharacterResourceCount?: number;
+  characterForm: {
+    name: string;
+    role: string;
+    gender: "male" | "female" | "other" | "unknown";
+    personality: string;
+    background: string;
+    development: string;
+    appearance: string;
+    physique: string;
+    attireStyle: string;
+    signatureDetail: string;
+    voiceTexture: string;
+    presenceImpression: string;
+    currentState: string;
+    currentGoal: string;
+  };
+  onCharacterFormChange: (
+    field:
+      | "name"
+      | "role"
+      | "gender"
+      | "personality"
+      | "background"
+      | "development"
+      | "appearance"
+      | "physique"
+      | "attireStyle"
+      | "signatureDetail"
+      | "voiceTexture"
+      | "presenceImpression"
+      | "currentState"
+      | "currentGoal",
+    value: string,
+  ) => void;
+  onSaveCharacter: () => void;
+  isSavingCharacter: boolean;
+  timelineEvents: CharacterTimeline[];
+  directorTakeoverEntry?: ReactNode;
+}
+
+export interface NovelEditTakeoverState {
+  mode: "loading" | "running" | "waiting" | "action_required" | "failed";
+  title: string;
+  description: string;
+  progress?: number | null;
+  currentAction?: string | null;
+  checkpointLabel?: string | null;
+  taskId?: string | null;
+  actions?: Array<{
+    label: string;
+    onClick: () => void;
+    variant?: "default" | "outline" | "secondary" | "destructive";
+    disabled?: boolean;
+  }>;
+}
+
+export interface NovelTaskDrawerState {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  task: UnifiedTaskDetail | null;
+  snapshot?: DirectorTaskSnapshot | null;
+  runtimeSnapshot?: DirectorRuntimeSnapshot | null;
+  projection?: DirectorBookAutomationProjection | null;
+  currentUiModel: {
+    provider: string;
+    model: string;
+    temperature: number;
+  };
+  actions: AITakeoverAction[];
+  onProjectionAction?: (action: DirectorBookAutomationAction) => void;
+  resourceProposals?: CharacterResourceProposalSummary[];
+  onOpenResourceProposalSource?: (proposal: CharacterResourceProposalSummary) => void;
+  onConfirmResourceProposal?: (proposalId: string) => void;
+  onRejectResourceProposal?: (proposalId: string) => void;
+  confirmingResourceProposalId?: string;
+  rejectingResourceProposalId?: string;
+  followUp?: AutoDirectorFollowUpDetail | null;
+  onFollowUpAction?: (action: AutoDirectorAction) => void;
+  executingFollowUpAction?: boolean;
+  runtimeHardBlocked?: boolean;
+  runtimeBlockedReason?: string | null;
+  manualEditImpact?: DirectorManualEditImpact | null;
+  manualEditImpactLoading?: boolean;
+  onInspectManualEditImpact?: () => void;
+  overrideModel?: LLMSelectorValue;
+  onOverrideModelChange?: (value: LLMSelectorValue) => void;
+  onRetryWithOverrideModel?: () => void;
+  retryWithOverrideModelPending?: boolean;
+  canRetryWithOverrideModel?: boolean;
+  onRetryWithTaskModel?: () => void;
+  retryWithTaskModelPending?: boolean;
+  capabilities?: {
+    availableActions: boolean;
+    availableFollowUps: boolean;
+    canAdjustRuntimePolicy: boolean;
+    canInspectManualEditImpact: boolean;
+    canRetryWithOverrideModel: boolean;
+    canCancel: boolean;
+    canArchive: boolean;
+  };
+  onOpenFullTaskCenter: () => void;
+}
+
+export interface NovelEditViewProps {
+  id: string;
+  activeTab: string;
+  workflowCurrentTab?: string | null;
+  onActiveTabChange: (value: string) => void;
+  exportControls: {
+    canExportCurrentStep: boolean;
+    isExportingCurrentMarkdown: boolean;
+    isExportingCurrentJson: boolean;
+    isExportingFullMarkdown: boolean;
+    isExportingFullJson: boolean;
+    isExportingFullTxt: boolean;
+    onExportCurrent: (format: NovelExportDownloadFormat) => void;
+    onExportFull: (format: NovelExportFormat) => void;
+  };
+  basicTab: BasicTabProps;
+  worldTab: BasicTabProps;
+  storyMacroTab: StoryMacroTabProps;
+  outlineTab: OutlineTabViewProps;
+  structuredTab: StructuredTabViewProps;
+  chapterTab: ChapterTabViewProps;
+  pipelineTab: PipelineTabViewProps;
+  characterTab: CharacterTabViewProps;
+  takeover?: NovelEditTakeoverState | null;
+  taskDrawer?: NovelTaskDrawerState | null;
+  activeStepTakeoverEntry?: ReactNode;
+  onSwitchToSimpleMode?: () => void;
+  isSwitchingToSimpleMode?: boolean;
+}

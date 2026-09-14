@@ -1,0 +1,376 @@
+import "dotenv/config";
+import type { Server } from "node:http";
+import os from "node:os";
+import cors from "cors";
+import express from "express";
+import helmet from "helmet";
+import morgan from "morgan";
+import type { ApiResponse } from "@ai-novel/shared/types/api";
+import { ensureRuntimeDatabaseReady } from "./db/runtimeMigrations";
+import { errorHandler } from "./middleware/errorHandler";
+import { loadProviderApiKeys } from "./llm/factory";
+import astrologyRouter from "./routes/astrology";
+import agentCatalogRouter from "./routes/agentCatalog";
+import agentRunsRouter from "./routes/agentRuns";
+import autoDirectorChannelCallbacksRouter from "./routes/autoDirectorChannelCallbacks";
+import autoDirectorFollowUpsRouter from "./routes/autoDirectorFollowUps";
+import bookAnalysisRouter from "./routes/bookAnalysis";
+import characterRouter from "./routes/character";
+import characterConversationRouter from "./modules/characterConversation/http/characterConversationRoutes";
+import visualAssetRouter from "./modules/visualAssets/http/visualAssetRoutes";
+import chatRouter from "./routes/chat";
+import creativeHubRouter from "./routes/creativeHub";
+import genreRouter from "./routes/genre";
+import healthRouter from "./routes/health";
+import imagesRouter from "./routes/images";
+import knowledgeRouter from "./routes/knowledge";
+import llmRouter from "./routes/llm";
+import llmLiveRouter from "./platform/llm/live/http/llmLiveRoutes";
+import novelRouter from "./modules/novel/http/novel";
+import creationStudioRouter from "./modules/novel/creation-studio/http/creationStudioRoutes";
+import { shortStoryProductionService } from "./modules/novel/short-story/application/ShortStoryProductionService";
+import dramaRouter from "./modules/drama/http/dramaRoutes";
+import comicRouter from "./modules/comic/http/comicRoutes";
+import marketRadarRouter from "./modules/marketRadar/http/marketRadarRoutes";
+import novelDirectorRouter from "./services/novel/director/http/novelDirector";
+import novelExportRouter from "./modules/export/http/novelExport";
+import novelWorkflowsRouter from "./services/novel/director/http/novelWorkflows";
+import promptWorkbenchRouter from "./routes/promptWorkbench";
+import ragRouter from "./routes/rag";
+import settingsAutoDirectorRouter from "./routes/settingsAutoDirector";
+import settingsRouter from "./routes/settings";
+import styleEngineRouter from "./routes/styleEngine";
+import styleEngineExtractionRouter from "./routes/styleEngineExtraction";
+import storyModeRouter from "./routes/storyMode";
+import tasksRouter from "./routes/tasks";
+import titleLibraryRouter from "./routes/titleLibrary";
+import worldRouter from "./modules/setup/world/http";
+import writingFormulaRouter from "./routes/writingFormula";
+import { novelEventBus, registerNovelEventHandlers } from "./events";
+import { bookAnalysisService } from "./services/bookAnalysis/BookAnalysisService";
+import { ragServices } from "./services/rag";
+import { getSharedNovelServices } from "./services/novel/application/sharedNovelServices";
+import { novelSideEffectWorker } from "./events/sideEffects";
+import { NovelPipelineRuntimeService } from "./services/novel/NovelPipelineRuntimeService";
+import { recoveryTaskService } from "./services/task/RecoveryTaskService";
+import {
+  ensureSystemResourceStarterData,
+  hasSystemResourceBootstrapChanges,
+} from "./services/bootstrap/SystemResourceBootstrapService";
+import { initializeRagSettingsCompatibility } from "./services/settings/RagCompatibilityBootstrapService";
+import onboardingRoutes from "./modules/setup/onboarding/http/onboardingRoutes";
+import { qualityDebtSettingsService } from "./services/settings/QualityDebtSettingsService";
+import { marketRadarService } from "./modules/marketRadar/application/MarketRadarService";
+import { DirectorWorker } from "./workers/directorWorker";
+import { cleanupLogDirectory, resolveLogRetentionConfig } from "./platform/logging/logRetention";
+import { resolveLogsRoot } from "./runtime/appPaths";
+
+getSharedNovelServices();
+registerNovelEventHandlers(novelEventBus);
+const novelPipelineRuntimeService = new NovelPipelineRuntimeService();
+
+morgan.token("error-message", (_req, res) => {
+  const response = res as typeof res & {
+    locals?: {
+      requestErrorMessage?: unknown;
+    };
+  };
+  const errorMessage = response.locals?.requestErrorMessage;
+  return typeof errorMessage === "string" ? errorMessage.trim() : "";
+});
+
+function parseEnvFlag(value: string | undefined, defaultValue: boolean): boolean {
+  if (value === undefined) return defaultValue;
+  return value === "true" || value === "1";
+}
+
+export function createApp() {
+  getSharedNovelServices();
+  const app = express();
+  const jsonBodyLimit = process.env.API_JSON_LIMIT ?? "20mb";
+  const corsOriginEnv = process.env.CORS_ORIGIN;
+  const corsAllowList = corsOriginEnv
+    ? corsOriginEnv
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+    : [];
+
+  const allowLan = parseEnvFlag(process.env.ALLOW_LAN, process.env.NODE_ENV !== "production");
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        const isListedOrigin = corsAllowList.includes(origin);
+        const isLocalhostDevOrigin = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+        const isLanOrigin = allowLan && /^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}:\d+$/.test(origin);
+        callback(null, isListedOrigin || isLocalhostDevOrigin || isLanOrigin);
+      },
+      credentials: true,
+    }),
+  );
+  app.use(helmet());
+  app.use(morgan((tokens, req, res) => {
+    const method = tokens.method(req, res) ?? "-";
+    const url = tokens.url(req, res) ?? "-";
+    const status = tokens.status(req, res) ?? "-";
+    const responseTime = tokens["response-time"](req, res) ?? "0";
+    const contentLength = tokens.res(req, res, "content-length") ?? "0";
+    const errorMessage = tokens["error-message"](req, res);
+    const errorSuffix = errorMessage ? ` | error: ${errorMessage}` : "";
+    return `${method} ${url} ${status} ${responseTime} ms - ${contentLength}${errorSuffix}`;
+  }));
+  app.use(express.json({ limit: jsonBodyLimit }));
+
+  app.use("/api/health", healthRouter);
+  app.use("/api/agent-catalog", agentCatalogRouter);
+  app.use("/api/agent-runs", agentRunsRouter);
+  app.use("/api/book-analysis", bookAnalysisRouter);
+  app.use("/api/genres", genreRouter);
+  app.use("/api/story-modes", storyModeRouter);
+  app.use("/api/knowledge", knowledgeRouter);
+  app.use("/api/llm", llmRouter);
+  app.use("/api/llm-live", llmLiveRouter);
+  app.use("/api/title-library", titleLibraryRouter);
+  app.use("/api", styleEngineRouter);
+  app.use("/api", styleEngineExtractionRouter);
+  app.use("/api/novels", novelRouter);
+  app.use("/api/creation-studio", creationStudioRouter);
+  app.use("/api/novels/director", novelDirectorRouter);
+  app.use("/api/novel-workflows", novelWorkflowsRouter);
+  app.use("/api/novels", novelExportRouter);
+  app.use("/api/drama", dramaRouter);
+  app.use("/api/comic", comicRouter);
+  app.use("/api/market-radar", marketRadarRouter);
+  app.use("/api/worlds", worldRouter);
+  app.use("/api/rag", ragRouter);
+  app.use("/api/base-characters", characterRouter);
+  app.use("/api/character-conversations", characterConversationRouter);
+  app.use("/api/writing-formula", writingFormulaRouter);
+  app.use("/api/chat", chatRouter);
+  app.use("/api/creative-hub", creativeHubRouter);
+  app.use("/api/prompt-workbench", promptWorkbenchRouter);
+  app.use("/api/images", imagesRouter);
+  app.use("/api/visual-assets", visualAssetRouter);
+  app.use("/api/tasks", tasksRouter);
+  app.use("/api/auto-director/follow-ups", autoDirectorFollowUpsRouter);
+  app.use("/api/settings/auto-director", settingsAutoDirectorRouter);
+  app.use("/api/auto-director/channel-callbacks", autoDirectorChannelCallbacksRouter);
+  app.use("/api/settings", settingsRouter);
+  app.use("/api", onboardingRoutes);
+  app.use("/api/astrology", astrologyRouter);
+
+  app.use((_req, res) => {
+    const response: ApiResponse<null> = {
+      success: false,
+      error: "接口不存在。",
+    };
+    res.status(404).json(response);
+  });
+
+  app.use(errorHandler);
+
+  return app;
+}
+
+function getLanIp(): string | null {
+  const ifaces = os.networkInterfaces();
+  for (const list of Object.values(ifaces)) {
+    if (!list) continue;
+    for (const info of list) {
+      if (info.family === "IPv4" && !info.internal) {
+        return info.address;
+      }
+    }
+  }
+  return null;
+}
+
+function createServerUrl(host: string, port: number): string {
+  if (host === "0.0.0.0" || host === "::") {
+    return `http://localhost:${port}`;
+  }
+  return host.includes(":") ? `http://[${host}]:${port}` : `http://${host}:${port}`;
+}
+
+export interface ServerStartOptions {
+  host?: string;
+  port?: number;
+  allowLan?: boolean;
+}
+
+export interface StartedServer {
+  app: express.Express;
+  server: Server;
+  host: string;
+  port: number;
+  allowLan: boolean;
+  url: string;
+  close: () => Promise<void>;
+}
+
+interface BackgroundServicesHandle {
+  stop: () => Promise<void>;
+}
+
+function resolveServerStartOptions(options?: ServerStartOptions): {
+  host: string;
+  port: number;
+  allowLan: boolean;
+} {
+  const allowLan = options?.allowLan ?? parseEnvFlag(process.env.ALLOW_LAN, process.env.NODE_ENV !== "production");
+  return {
+    allowLan,
+    port: options?.port ?? Number(process.env.PORT ?? 3000),
+    host: options?.host ?? process.env.HOST ?? (allowLan ? "0.0.0.0" : "localhost"),
+  };
+}
+
+function logServerReady(host: string, port: number): void {
+  console.log(`[server] listening on http://localhost:${port}`);
+  if (host === "0.0.0.0" || host === "::") {
+    const lanIp = getLanIp();
+    if (lanIp) {
+      console.log(`[server] LAN: http://${lanIp}:${port}`);
+    }
+  }
+}
+
+function scheduleLogRetentionCleanup(): void {
+  setImmediate(() => {
+    try {
+      const summary = cleanupLogDirectory(resolveLogsRoot(), resolveLogRetentionConfig());
+      if (summary.deletedFiles > 0 || summary.failedFiles > 0) {
+        console.info("[server.logs] cleanup completed.", {
+          deletedFiles: summary.deletedFiles,
+          deletedBytes: summary.deletedBytes,
+          failedFiles: summary.failedFiles,
+        });
+      }
+      for (const failure of summary.failures.slice(0, 5)) {
+        console.warn("[server.logs] cleanup failed for file.", failure);
+      }
+    } catch (error) {
+      console.warn("[server.logs] cleanup skipped.", error);
+    }
+  });
+}
+
+function initializeBackgroundServices(): BackgroundServicesHandle {
+  void marketRadarService.recoverInterruptedRuns().catch((error) => {
+    console.warn("[market-radar] failed to mark interrupted scans.", error);
+  });
+  ragServices.ragWorker.start();
+  ragServices.ragRetrievalTraceRetention.start();
+  novelSideEffectWorker.start();
+  const recoveryInitialization = recoveryTaskService.initializePendingRecoveries();
+  const directorWorker = new DirectorWorker();
+  void recoveryInitialization.then(() => {
+    void directorWorker.start().catch((error) => {
+      console.error("[director.worker] unexpected stop", error);
+    });
+  }).catch((error) => {
+    console.error("[director.worker] recovery initialization failed; worker was not started", error);
+  });
+  void shortStoryProductionService.recoverPending().catch((error) => {
+    console.warn("[short-story] failed to resume pending production.", error);
+  });
+
+  void loadProviderApiKeys().catch((error) => {
+    console.warn("数据库中的模型密钥加载失败，已回退到环境变量。", error);
+  });
+
+  void ensureSystemResourceStarterData()
+    .then((systemResourceReport) => {
+      if (hasSystemResourceBootstrapChanges(systemResourceReport)) {
+        console.log("[server] built-in creative resources bootstrapped.", systemResourceReport);
+      }
+    })
+    .catch((error) => {
+      console.warn("Failed to bootstrap built-in creative resources.", error);
+    });
+
+  void recoveryInitialization
+    .then(() => {
+      bookAnalysisService.startWatchdog();
+      novelPipelineRuntimeService.startWatchdog();
+    })
+    .catch((error) => {
+      console.warn("Failed to prepare pending recovery candidates.", error);
+      bookAnalysisService.startWatchdog();
+      novelPipelineRuntimeService.startWatchdog();
+    });
+
+  return {
+    stop: async () => {
+      directorWorker.stop();
+      novelSideEffectWorker.stop();
+      ragServices.ragWorker.stop();
+      ragServices.ragRetrievalTraceRetention.stop();
+      bookAnalysisService.stopWatchdog();
+      novelPipelineRuntimeService.stopWatchdog();
+    },
+  };
+}
+
+export async function startServer(options?: ServerStartOptions): Promise<StartedServer> {
+  scheduleLogRetentionCleanup();
+  await ensureRuntimeDatabaseReady();
+
+  const ragCompatibilityReport = await initializeRagSettingsCompatibility();
+  if (
+    ragCompatibilityReport.importedSettingKeys.length > 0
+    || ragCompatibilityReport.importedProviderRecords.length > 0
+  ) {
+    console.log("[server] imported legacy RAG env settings.", ragCompatibilityReport);
+  }
+  await qualityDebtSettingsService.warnIfAutoPromotionEnabled().catch((error) => {
+    console.warn("[server] failed to inspect pending review auto-promotion settings.", error);
+  });
+
+  const app = createApp();
+  const { host, port, allowLan } = resolveServerStartOptions(options);
+
+  const server = await new Promise<Server>((resolve, reject) => {
+    const listeningServer = app.listen(port, host, () => resolve(listeningServer));
+    listeningServer.once("error", reject);
+  });
+  const backgroundServices = initializeBackgroundServices();
+
+  logServerReady(host, port);
+
+  return {
+    app,
+    server,
+    host,
+    port,
+    allowLan,
+    url: createServerUrl(host, port),
+    close: async () => {
+      await backgroundServices.stop();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+}
+
+async function bootstrap(): Promise<void> {
+  await startServer();
+}
+
+if (require.main === module) {
+  void bootstrap().catch((error) => {
+    console.error("[server] bootstrap failed.", error);
+    process.exit(1);
+  });
+}

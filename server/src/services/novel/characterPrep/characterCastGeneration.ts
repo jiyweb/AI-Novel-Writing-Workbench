@@ -1,0 +1,497 @@
+import type { LLMProvider } from "@ai-novel/shared/types/llm";
+import type { CharacterWorldFocusHints } from "@ai-novel/shared/types/novel";
+import { prisma } from "../../../db/prisma";
+import { StructuredOutputError } from "../../../llm/structuredOutput";
+import { runStructuredPrompt } from "../../../prompting/core/promptRunner";
+import { buildCharacterCastContextBlocks } from "../../../prompting/prompts/novel/characterPreparation.contextBlocks";
+import {
+  characterCastAutoMembersPrompt,
+  characterCastAutoRelationsPrompt,
+} from "../../../prompting/prompts/novel/characterPreparation.autoFallback.prompts";
+import {
+  characterCastAutoNormalizePrompt,
+  characterCastAutoPrompt,
+  characterCastAutoRepairPrompt,
+  characterCastOptionNormalizePrompt,
+  characterCastOptionPrompt,
+  characterCastOptionRepairPrompt,
+} from "../../../prompting/prompts/novel/characterPreparation.prompts";
+import type {
+  CharacterCastAutoMembersResponseParsed,
+  CharacterCastAutoResponseParsed,
+  CharacterCastOptionResponseParsed,
+} from "../../../prompting/prompts/novel/characterPreparation.promptSchemas";
+import { buildStoryModePromptBlock, normalizeStoryModeOutput } from "../../storyMode/storyModeProfile";
+import { serializeCharacterProhibitions } from "../characters/characterHardFacts";
+import {
+  assessCharacterCastBatch,
+  buildCharacterCastRepairReasons,
+  type CharacterCastBatchAssessment,
+} from "./characterCastQuality";
+import { WorldContextGateway } from "../worldContext/WorldContextGateway";
+
+export interface CharacterPrepOptions {
+  provider?: LLMProvider;
+  model?: string;
+  temperature?: number;
+  storyInput?: string;
+  useWorldContext?: boolean;
+  worldFocusHints?: CharacterWorldFocusHints;
+  novelId?: string;
+  taskId?: string;
+  stage?: string;
+  itemKey?: string;
+  entrypoint?: string;
+}
+
+type CharacterCastGenerationContextBlocks = ReturnType<typeof buildCharacterCastContextBlocks>;
+
+interface CharacterCastGenerationContext {
+  storyInput: string;
+  contextBlocks: CharacterCastGenerationContextBlocks;
+}
+
+function buildLivePromptContext(options: CharacterPrepOptions) {
+  return {
+    novelId: options.novelId,
+    taskId: options.taskId,
+    stage: options.stage,
+    itemKey: options.itemKey,
+    entrypoint: options.entrypoint,
+  };
+}
+
+function toOptionalText(value: string | null | undefined): string | null {
+  const normalized = value?.trim() ?? "";
+  return normalized || null;
+}
+
+function shouldFallbackToStagedAutoCast(error: unknown): error is StructuredOutputError {
+  if (!(error instanceof StructuredOutputError)) {
+    return false;
+  }
+
+  return error.category === "incomplete_json"
+    || error.category === "malformed_json"
+    || error.category === "schema_mismatch";
+}
+
+function buildAutoCastMemberRosterText(parsed: CharacterCastAutoMembersResponseParsed): string {
+  return parsed.members.map((member, index) => {
+    return [
+      `${index + 1}. ${member.name}`,
+      `castRole=${member.castRole}`,
+      `role=${member.role}`,
+      `relationToProtagonist=${member.relationToProtagonist || "未写"}`,
+      `storyFunction=${member.storyFunction}`,
+      member.identityLabel ? `identity=${member.identityLabel}` : "",
+      member.factionLabel ? `faction=${member.factionLabel}` : "",
+      member.powerLevel ? `power=${member.powerLevel}` : "",
+    ].filter(Boolean).join(" | ");
+  }).join("\n");
+}
+
+async function loadCastGenerationContext(
+  novelId: string,
+  options: CharacterPrepOptions,
+): Promise<CharacterCastGenerationContext> {
+  const worldContextGateway = new WorldContextGateway();
+  const novel = await prisma.novel.findUnique({
+    where: { id: novelId },
+    include: {
+      genre: { select: { name: true } },
+      bible: {
+        select: {
+          coreSetting: true,
+          mainPromise: true,
+          characterArcs: true,
+        },
+      },
+      storyMacroPlan: {
+        select: {
+          storyInput: true,
+          decompositionJson: true,
+          constraintEngineJson: true,
+        },
+      },
+      bookContract: {
+        select: {
+          readingPromise: true,
+          protagonistFantasy: true,
+          coreSellingPoint: true,
+          chapter3Payoff: true,
+          chapter10Payoff: true,
+          chapter30Payoff: true,
+          escalationLadder: true,
+          relationshipMainline: true,
+        },
+      },
+      primaryStoryMode: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          template: true,
+          parentId: true,
+          profileJson: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
+      secondaryStoryMode: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          template: true,
+          parentId: true,
+          profileJson: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
+      characters: {
+        select: {
+          name: true,
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!novel) {
+    throw new Error("Novel not found.");
+  }
+
+  const storyInput = options.storyInput?.trim()
+    || novel.storyMacroPlan?.storyInput?.trim()
+    || novel.description?.trim()
+    || "";
+  const worldContext = options.useWorldContext === false
+    ? null
+    : await worldContextGateway.getWorldContextBlock(novelId, {
+      purpose: "character",
+      strength: "normal",
+      storyInput,
+      provider: options.provider,
+      model: options.model,
+      temperature: options.temperature,
+    });
+  const storyModeBlock = buildStoryModePromptBlock({
+    primary: novel.primaryStoryMode ? normalizeStoryModeOutput(novel.primaryStoryMode) : null,
+    secondary: novel.secondaryStoryMode ? normalizeStoryModeOutput(novel.secondaryStoryMode) : null,
+  });
+  const contextBlocks = buildCharacterCastContextBlocks({
+    projectTitle: novel.title,
+    storyInput: storyInput || "暂无直接故事输入，请结合书级约束补齐真实可入戏角色。",
+    genreName: novel.genre?.name ?? null,
+    storyModeBlock,
+    styleTone: novel.styleTone ?? null,
+    narrativePov: novel.narrativePov ?? null,
+    pacePreference: novel.pacePreference ?? null,
+    emotionIntensity: novel.emotionIntensity ?? null,
+    corePromise: novel.bible?.mainPromise ?? null,
+    coreSetting: novel.bible?.coreSetting ?? null,
+    characterArcs: novel.bible?.characterArcs ?? null,
+    worldRules: worldContext?.worldRulesText ?? null,
+    worldStage: worldContext?.worldStageText ?? null,
+    worldFocusHints: options.useWorldContext === false ? null : options.worldFocusHints,
+    storyDecomposition: novel.storyMacroPlan?.decompositionJson ?? null,
+    constraintEngine: novel.storyMacroPlan?.constraintEngineJson ?? null,
+    bookContract: novel.bookContract,
+    existingCharacterNames: novel.characters.map((character) => character.name),
+  });
+
+  return {
+    storyInput,
+    contextBlocks,
+  };
+}
+
+async function normalizeCharacterCastOptions(
+  parsed: CharacterCastOptionResponseParsed,
+  options: CharacterPrepOptions,
+): Promise<CharacterCastOptionResponseParsed> {
+  const result = await runStructuredPrompt({
+    asset: characterCastOptionNormalizePrompt,
+    promptInput: {
+      payloadJson: JSON.stringify(parsed, null, 2),
+    },
+    options: {
+      ...buildLivePromptContext(options),
+      provider: options.provider,
+      model: options.model,
+      temperature: 0.2,
+    },
+  });
+  return result.output;
+}
+
+async function repairCharacterCastOptions(input: {
+  parsed: CharacterCastOptionResponseParsed;
+  assessment: CharacterCastBatchAssessment;
+  contextBlocks: CharacterCastGenerationContextBlocks;
+  options: CharacterPrepOptions;
+}): Promise<CharacterCastOptionResponseParsed> {
+  const result = await runStructuredPrompt({
+    asset: characterCastOptionRepairPrompt,
+    promptInput: {
+      payloadJson: JSON.stringify(input.parsed, null, 2),
+      failureReasons: buildCharacterCastRepairReasons(input.assessment),
+    },
+    contextBlocks: input.contextBlocks,
+    options: {
+      ...buildLivePromptContext(input.options),
+      provider: input.options.provider,
+      model: input.options.model,
+      temperature: Math.max(0.2, Math.min(input.options.temperature ?? 0.55, 0.6)),
+    },
+  });
+  return result.output;
+}
+
+async function normalizeAutoCharacterCastOption(
+  parsed: CharacterCastAutoResponseParsed,
+  options: CharacterPrepOptions,
+): Promise<CharacterCastAutoResponseParsed> {
+  const result = await runStructuredPrompt({
+    asset: characterCastAutoNormalizePrompt,
+    promptInput: {
+      payloadJson: JSON.stringify(parsed, null, 2),
+    },
+    options: {
+      ...buildLivePromptContext(options),
+      provider: options.provider,
+      model: options.model,
+      temperature: 0.2,
+    },
+  });
+  return result.output;
+}
+
+async function generateAutoCharacterCastDraftViaStagedPrompts(
+  context: CharacterCastGenerationContext,
+  options: CharacterPrepOptions,
+): Promise<CharacterCastAutoResponseParsed> {
+  const memberTemperature = Math.min(options.temperature ?? 0.5, 0.45);
+  const membersGeneration = await runStructuredPrompt({
+    asset: characterCastAutoMembersPrompt,
+    promptInput: {},
+    contextBlocks: context.contextBlocks,
+    options: {
+      ...buildLivePromptContext(options),
+      provider: options.provider,
+      model: options.model,
+      temperature: memberTemperature,
+    },
+  });
+
+  const memberRosterText = buildAutoCastMemberRosterText(membersGeneration.output);
+  const protagonistName = membersGeneration.output.members.find((member) => member.castRole === "protagonist")?.name
+    ?? membersGeneration.output.members[0]?.name
+    ?? "";
+  const relationsGeneration = await runStructuredPrompt({
+    asset: characterCastAutoRelationsPrompt,
+    promptInput: {
+      storyInput: context.storyInput,
+      optionTitle: membersGeneration.output.title,
+      optionSummary: membersGeneration.output.summary,
+      protagonistName,
+      memberNames: membersGeneration.output.members.map((member) => member.name),
+      memberRosterText,
+    },
+    options: {
+      ...buildLivePromptContext(options),
+      provider: options.provider,
+      model: options.model,
+      temperature: 0.3,
+    },
+  });
+
+  return {
+    option: {
+      ...membersGeneration.output,
+      relations: relationsGeneration.output.relations,
+    },
+  };
+}
+
+async function repairAutoCharacterCastOption(input: {
+  parsed: CharacterCastAutoResponseParsed;
+  assessment: CharacterCastBatchAssessment;
+  contextBlocks: CharacterCastGenerationContextBlocks;
+  options: CharacterPrepOptions;
+}): Promise<CharacterCastAutoResponseParsed> {
+  const result = await runStructuredPrompt({
+    asset: characterCastAutoRepairPrompt,
+    promptInput: {
+      payloadJson: JSON.stringify(input.parsed, null, 2),
+      failureReasons: buildCharacterCastRepairReasons(input.assessment),
+    },
+    contextBlocks: input.contextBlocks,
+    options: {
+      ...buildLivePromptContext(input.options),
+      provider: input.options.provider,
+      model: input.options.model,
+      temperature: Math.max(0.2, Math.min(input.options.temperature ?? 0.55, 0.6)),
+    },
+  });
+  return result.output;
+}
+
+export async function generateCharacterCastOptionsDraft(
+  novelId: string,
+  options: CharacterPrepOptions = {},
+): Promise<{ storyInput: string; parsed: CharacterCastOptionResponseParsed }> {
+  const context = await loadCastGenerationContext(novelId, options);
+  const generation = await runStructuredPrompt({
+    asset: characterCastOptionPrompt,
+    promptInput: {
+      optionCount: 3,
+    },
+    contextBlocks: context.contextBlocks,
+    options: {
+      ...buildLivePromptContext(options),
+      provider: options.provider,
+      model: options.model,
+      temperature: options.temperature ?? 0.5,
+    },
+  });
+
+  let parsed = generation.output;
+
+  let assessment = assessCharacterCastBatch(parsed.options, context.storyInput);
+  if (assessment.autoApplicableOptionIndex === null) {
+    parsed = await repairCharacterCastOptions({
+      parsed,
+      assessment,
+      contextBlocks: context.contextBlocks,
+      options,
+    }).catch(() => parsed);
+    assessment = assessCharacterCastBatch(parsed.options, context.storyInput);
+  }
+
+  return {
+    storyInput: context.storyInput,
+    parsed,
+  };
+}
+
+export async function generateAutoCharacterCastDraft(
+  novelId: string,
+  options: CharacterPrepOptions = {},
+): Promise<{ storyInput: string; parsed: CharacterCastAutoResponseParsed }> {
+  const context = await loadCastGenerationContext(novelId, options);
+  let parsed: CharacterCastAutoResponseParsed;
+  try {
+    const generation = await runStructuredPrompt({
+      asset: characterCastAutoPrompt,
+      promptInput: {},
+      contextBlocks: context.contextBlocks,
+      options: {
+        ...buildLivePromptContext(options),
+        provider: options.provider,
+        model: options.model,
+        temperature: options.temperature ?? 0.5,
+      },
+    });
+    parsed = generation.output;
+  } catch (error) {
+    if (!shouldFallbackToStagedAutoCast(error)) {
+      throw error;
+    }
+
+    console.info(
+      [
+        "[character.cast.auto]",
+        "event=staged_fallback",
+        `category=${error.category}`,
+        `provider=${options.provider ?? "default"}`,
+        `model=${options.model ?? "default"}`,
+      ].join(" "),
+    );
+    parsed = await generateAutoCharacterCastDraftViaStagedPrompts(context, options);
+  }
+
+  let assessment = assessCharacterCastBatch([parsed.option], context.storyInput);
+  if (assessment.autoApplicableOptionIndex === null) {
+    parsed = await repairAutoCharacterCastOption({
+      parsed,
+      assessment,
+      contextBlocks: context.contextBlocks,
+      options,
+    }).catch(() => parsed);
+    assessment = assessCharacterCastBatch([parsed.option], context.storyInput);
+  }
+
+  return {
+    storyInput: context.storyInput,
+    parsed,
+  };
+}
+
+export async function persistCharacterCastOptionsDraft(
+  novelId: string,
+  storyInput: string,
+  parsed: CharacterCastOptionResponseParsed,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.characterCastOption.deleteMany({ where: { novelId } });
+    for (const option of parsed.options) {
+      await tx.characterCastOption.create({
+        data: {
+          novelId,
+          title: option.title,
+          summary: option.summary,
+          whyItWorks: toOptionalText(option.whyItWorks),
+          recommendedReason: toOptionalText(option.recommendedReason),
+          sourceStoryInput: toOptionalText(storyInput),
+          members: {
+            create: option.members.map((member, index) => ({
+              sortOrder: index,
+              name: member.name,
+              role: member.role,
+              gender: member.gender,
+              castRole: member.castRole,
+              relationToProtagonist: toOptionalText(member.relationToProtagonist),
+              storyFunction: member.storyFunction,
+              shortDescription: toOptionalText(member.shortDescription),
+              personality: toOptionalText(member.personality),
+              background: toOptionalText(member.background),
+              development: toOptionalText(member.development),
+              identityLabel: toOptionalText(member.identityLabel),
+              factionLabel: toOptionalText(member.factionLabel),
+              stanceLabel: toOptionalText(member.stanceLabel),
+              powerLevel: toOptionalText(member.powerLevel),
+              realm: toOptionalText(member.realm),
+              currentLocation: toOptionalText(member.currentLocation),
+              availability: toOptionalText(member.availability),
+              prohibitionsJson: serializeCharacterProhibitions(member.prohibitions),
+              outerGoal: toOptionalText(member.outerGoal),
+              innerNeed: toOptionalText(member.innerNeed),
+              fear: toOptionalText(member.fear),
+              wound: toOptionalText(member.wound),
+              misbelief: toOptionalText(member.misbelief),
+              secret: toOptionalText(member.secret),
+              moralLine: toOptionalText(member.moralLine),
+              firstImpression: toOptionalText(member.firstImpression),
+            })),
+          },
+          relations: {
+            create: option.relations.map((relation, index) => ({
+              sortOrder: index,
+              sourceName: relation.sourceName,
+              targetName: relation.targetName,
+              surfaceRelation: relation.surfaceRelation,
+              hiddenTension: toOptionalText(relation.hiddenTension),
+              conflictSource: toOptionalText(relation.conflictSource),
+              secretAsymmetry: toOptionalText(relation.secretAsymmetry),
+              dynamicLabel: toOptionalText(relation.dynamicLabel),
+              nextTurnPoint: toOptionalText(relation.nextTurnPoint),
+            })),
+          },
+        },
+      });
+    }
+  });
+}

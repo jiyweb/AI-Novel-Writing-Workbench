@@ -1,0 +1,568 @@
+import type {
+  KnowledgeBindingTargetType,
+  KnowledgeDocumentKind,
+  KnowledgeDocumentStatus,
+  KnowledgeRecallTestResult,
+} from "@ai-novel/shared/types/knowledge";
+import { prisma } from "../../db/prisma";
+import { ragConfig } from "../../config/rag";
+import { ragServices } from "../rag";
+import { RAG_ENABLED_KEY } from "../settings/ragSettingKeys";
+import {
+  buildKnowledgeContentHash,
+  normalizeKnowledgeContent,
+  normalizeKnowledgeDocumentTitle,
+} from "./common";
+
+export class KnowledgeService {
+  private async enableRagForManualReindex(): Promise<void> {
+    if (ragConfig.enabled) {
+      return;
+    }
+    await prisma.appSetting.upsert({
+      where: { key: RAG_ENABLED_KEY },
+      update: { value: "true" },
+      create: { key: RAG_ENABLED_KEY, value: "true" },
+    });
+    ragConfig.enabled = true;
+    ragServices.ragWorker.start();
+  }
+
+  private getPendingIndexStatus(): "idle" | "queued" {
+    return ragConfig.enabled ? "queued" : "idle";
+  }
+
+  private async loadLatestFailedIndexErrors(documentIds: string[]): Promise<Map<string, string | null>> {
+    if (documentIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await prisma.ragIndexJob.findMany({
+      where: {
+        ownerType: "knowledge_document",
+        ownerId: { in: documentIds },
+        status: "failed",
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      select: {
+        ownerId: true,
+        lastError: true,
+      },
+    });
+
+    const errorMap = new Map<string, string | null>();
+    for (const row of rows) {
+      if (!errorMap.has(row.ownerId)) {
+        errorMap.set(row.ownerId, row.lastError ?? "索引任务失败。请到任务列表查看详情。");
+      }
+    }
+    return errorMap;
+  }
+
+  private queueKnowledgeRebuild(documentId: string, payload?: Record<string, unknown>): void {
+    if (!ragConfig.enabled) {
+      return;
+    }
+    const enqueue = payload
+      ? ragServices.ragIndexService.enqueueOwnerJob("rebuild", "knowledge_document", documentId, { payload })
+      : ragServices.ragIndexService.enqueueOwnerJob("rebuild", "knowledge_document", documentId);
+    void enqueue.catch(() => {
+      // Keep knowledge document CRUD resilient even if reindex queueing fails.
+    });
+  }
+
+  private queueKnowledgeDelete(documentId: string): void {
+    if (!ragConfig.enabled) {
+      return;
+    }
+    void ragServices.ragIndexService.enqueueOwnerJob("delete", "knowledge_document", documentId).catch(() => {
+      // Keep knowledge document CRUD resilient even if delete queueing fails.
+    });
+  }
+
+  private async assertTargetExists(targetType: KnowledgeBindingTargetType, targetId: string): Promise<void> {
+    if (targetType === "novel") {
+      const exists = await prisma.novel.count({ where: { id: targetId } });
+      if (!exists) {
+        throw new Error("Novel not found.");
+      }
+      return;
+    }
+    const exists = await prisma.world.count({ where: { id: targetId } });
+    if (!exists) {
+      throw new Error("World not found.");
+    }
+  }
+
+  async listDocuments(filters: {
+    keyword?: string;
+    kind?: KnowledgeDocumentKind;
+    status?: KnowledgeDocumentStatus;
+  } = {}) {
+    const keyword = filters.keyword?.trim();
+    const rows = await prisma.knowledgeDocument.findMany({
+      where: {
+        ...(filters.status ? { status: filters.status } : { status: { not: "archived" } }),
+        ...(filters.kind ? { kind: filters.kind } : {}),
+        ...(keyword
+          ? {
+            OR: [
+              { title: { contains: keyword } },
+              { fileName: { contains: keyword } },
+            ],
+          }
+          : {}),
+      },
+      include: {
+        _count: {
+          select: {
+            versions: true,
+            bookAnalyses: true,
+          },
+        },
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    });
+    const failedIndexErrors = await this.loadLatestFailedIndexErrors(rows.map((item) => item.id));
+
+    return rows.map((item) => ({
+      id: item.id,
+      title: item.title,
+      fileName: item.fileName,
+      kind: item.kind,
+      sourceAnalysisId: item.sourceAnalysisId,
+      status: item.status,
+      activeVersionId: item.activeVersionId,
+      activeVersionNumber: item.activeVersionNumber,
+      latestIndexStatus: item.latestIndexStatus,
+      latestIndexError:
+        item.latestIndexStatus === "failed"
+          ? (failedIndexErrors.get(item.id) ?? "索引任务失败。请到任务列表查看详情。")
+          : null,
+      lastIndexedAt: item.lastIndexedAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      versionCount: item._count.versions,
+      bookAnalysisCount: item._count.bookAnalyses,
+    }));
+  }
+
+  async getDocumentById(documentId: string) {
+    const document = await prisma.knowledgeDocument.findUnique({
+      where: { id: documentId },
+      include: {
+      versions: {
+          orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
+        },
+        _count: {
+          select: {
+            bookAnalyses: true,
+          },
+        },
+      },
+    });
+    if (!document) {
+      return null;
+    }
+    const failedIndexError = document.latestIndexStatus === "failed"
+      ? await prisma.ragIndexJob.findFirst({
+        where: {
+          ownerType: "knowledge_document",
+          ownerId: document.id,
+          status: "failed",
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: { lastError: true },
+      })
+      : null;
+
+    return {
+      id: document.id,
+      title: document.title,
+      fileName: document.fileName,
+      kind: document.kind,
+      sourceAnalysisId: document.sourceAnalysisId,
+      status: document.status,
+      activeVersionId: document.activeVersionId,
+      activeVersionNumber: document.activeVersionNumber,
+      latestIndexStatus: document.latestIndexStatus,
+      latestIndexError:
+        document.latestIndexStatus === "failed"
+          ? (failedIndexError?.lastError ?? "索引任务失败。请到任务列表查看详情。")
+          : null,
+      lastIndexedAt: document.lastIndexedAt,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+      bookAnalysisCount: document._count.bookAnalyses,
+      versions: document.versions.map((version) => ({
+        id: version.id,
+        documentId: version.documentId,
+        versionNumber: version.versionNumber,
+        content: version.content,
+        contentHash: version.contentHash,
+        charCount: version.charCount,
+        createdAt: version.createdAt,
+        isActive: version.id === document.activeVersionId,
+      })),
+    };
+  }
+
+  async createDocument(input: {
+    title?: string;
+    fileName: string;
+    content: string;
+    kind?: KnowledgeDocumentKind;
+    sourceAnalysisId?: string | null;
+    indexPayload?: Record<string, unknown>;
+  }) {
+    const normalizedContent = normalizeKnowledgeContent(input.content);
+    const title = normalizeKnowledgeDocumentTitle(input.title, input.fileName);
+    const contentHash = buildKnowledgeContentHash(normalizedContent);
+    const sourceAnalysisId = input.sourceAnalysisId?.trim() || null;
+    const kind: KnowledgeDocumentKind = input.kind ?? (sourceAnalysisId ? "analysis_published" : "user_upload");
+    if (kind === "analysis_published" && !sourceAnalysisId) {
+      throw new Error("Published analysis documents require sourceAnalysisId.");
+    }
+
+    const document = await prisma.$transaction(async (tx) => {
+      const existing = sourceAnalysisId
+        ? await tx.knowledgeDocument.findUnique({
+          where: { sourceAnalysisId },
+        })
+        : await tx.knowledgeDocument.findFirst({
+          where: {
+            title,
+            kind: "user_upload",
+            status: { not: "archived" },
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+
+      if (existing) {
+        if (existing.status === "archived") {
+          throw new Error("Archived knowledge documents cannot accept new versions.");
+        }
+        const nextVersionNumber = existing.activeVersionNumber + 1;
+        const version = await tx.knowledgeDocumentVersion.create({
+          data: {
+            documentId: existing.id,
+            versionNumber: nextVersionNumber,
+            content: normalizedContent,
+            contentHash,
+            charCount: normalizedContent.length,
+          },
+        });
+        return tx.knowledgeDocument.update({
+          where: { id: existing.id },
+          data: {
+            title,
+            fileName: input.fileName.trim(),
+            kind,
+            sourceAnalysisId,
+            activeVersionId: version.id,
+            activeVersionNumber: nextVersionNumber,
+            latestIndexStatus: this.getPendingIndexStatus(),
+          },
+          include: {
+            versions: {
+              orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
+            },
+          },
+        });
+      }
+
+      const created = await tx.knowledgeDocument.create({
+        data: {
+          title,
+          fileName: input.fileName.trim(),
+          kind,
+          sourceAnalysisId,
+          status: "enabled",
+          latestIndexStatus: this.getPendingIndexStatus(),
+        },
+      });
+      const version = await tx.knowledgeDocumentVersion.create({
+        data: {
+          documentId: created.id,
+          versionNumber: 1,
+          content: normalizedContent,
+          contentHash,
+          charCount: normalizedContent.length,
+        },
+      });
+      return tx.knowledgeDocument.update({
+        where: { id: created.id },
+        data: {
+          activeVersionId: version.id,
+          activeVersionNumber: 1,
+        },
+        include: {
+          versions: {
+            orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
+          },
+        },
+      });
+    });
+
+    this.queueKnowledgeRebuild(document.id, input.indexPayload);
+    const detail = await this.getDocumentById(document.id);
+    if (!detail) {
+      throw new Error("Knowledge document not found after creation.");
+    }
+    return detail;
+  }
+
+  async createDocumentVersion(documentId: string, input: {
+    title?: string;
+    fileName?: string;
+    content: string;
+    indexPayload?: Record<string, unknown>;
+  }) {
+    const normalizedContent = normalizeKnowledgeContent(input.content);
+    const contentHash = buildKnowledgeContentHash(normalizedContent);
+
+    const document = await prisma.$transaction(async (tx) => {
+      const existing = await tx.knowledgeDocument.findUnique({
+        where: { id: documentId },
+      });
+      if (!existing) {
+        throw new Error("Knowledge document not found.");
+      }
+      if (existing.status === "archived") {
+        throw new Error("Archived knowledge documents cannot accept new versions.");
+      }
+      const nextVersionNumber = existing.activeVersionNumber + 1;
+      const fileName = input.fileName?.trim() || existing.fileName;
+      const title = input.title !== undefined
+        ? normalizeKnowledgeDocumentTitle(input.title, fileName)
+        : existing.title;
+      const version = await tx.knowledgeDocumentVersion.create({
+        data: {
+          documentId,
+          versionNumber: nextVersionNumber,
+          content: normalizedContent,
+          contentHash,
+          charCount: normalizedContent.length,
+        },
+      });
+      return tx.knowledgeDocument.update({
+        where: { id: documentId },
+        data: {
+          title,
+          fileName,
+          activeVersionId: version.id,
+          activeVersionNumber: nextVersionNumber,
+          latestIndexStatus: this.getPendingIndexStatus(),
+        },
+        include: {
+          versions: {
+            orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
+          },
+        },
+      });
+    });
+
+    this.queueKnowledgeRebuild(document.id, input.indexPayload);
+    const detail = await this.getDocumentById(document.id);
+    if (!detail) {
+      throw new Error("Knowledge document not found after version creation.");
+    }
+    return detail;
+  }
+
+  async activateVersion(documentId: string, versionId: string) {
+    const document = await prisma.$transaction(async (tx) => {
+      const existing = await tx.knowledgeDocument.findUnique({
+        where: { id: documentId },
+        select: { status: true },
+      });
+      if (!existing) {
+        throw new Error("Knowledge document not found.");
+      }
+      if (existing.status === "archived") {
+        throw new Error("Archived knowledge documents must be restored before activating versions.");
+      }
+      const version = await tx.knowledgeDocumentVersion.findFirst({
+        where: {
+          id: versionId,
+          documentId,
+        },
+      });
+      if (!version) {
+        throw new Error("Knowledge document version not found.");
+      }
+      return tx.knowledgeDocument.update({
+        where: { id: documentId },
+        data: {
+          activeVersionId: version.id,
+          activeVersionNumber: version.versionNumber,
+          latestIndexStatus: this.getPendingIndexStatus(),
+        },
+        include: {
+          versions: {
+            orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
+          },
+        },
+      });
+    });
+
+    this.queueKnowledgeRebuild(document.id);
+    const detail = await this.getDocumentById(document.id);
+    if (!detail) {
+      throw new Error("Knowledge document not found after version activation.");
+    }
+    return detail;
+  }
+
+  async reindexDocument(documentId: string) {
+    const document = await prisma.knowledgeDocument.findUnique({
+      where: { id: documentId },
+    });
+    if (!document) {
+      throw new Error("Knowledge document not found.");
+    }
+    if (!document.activeVersionId) {
+      throw new Error("Knowledge document has no active version.");
+    }
+    if (document.status === "archived") {
+      throw new Error("Archived knowledge documents must be restored before reindexing.");
+    }
+    await this.enableRagForManualReindex();
+    const updated = await prisma.knowledgeDocument.update({
+      where: { id: documentId },
+      data: {
+        latestIndexStatus: this.getPendingIndexStatus(),
+      },
+    });
+    this.queueKnowledgeRebuild(documentId);
+    return updated;
+  }
+
+  async updateDocumentStatus(documentId: string, status: KnowledgeDocumentStatus) {
+    const document = await prisma.knowledgeDocument.findUnique({
+      where: { id: documentId },
+    });
+    if (!document) {
+      throw new Error("Knowledge document not found.");
+    }
+    const shouldArchiveDocument = document.status !== "archived" && status === "archived";
+    const shouldRestoreArchivedDocument = document.status === "archived" && status !== "archived";
+    const updated = await prisma.knowledgeDocument.update({
+      where: { id: documentId },
+      data: {
+        status,
+        ...(status === "archived" ? { latestIndexStatus: "idle" } : {}),
+        ...(shouldRestoreArchivedDocument && document.activeVersionId ? { latestIndexStatus: this.getPendingIndexStatus() } : {}),
+      },
+    });
+    if (shouldArchiveDocument) {
+      this.queueKnowledgeDelete(documentId);
+    } else if (shouldRestoreArchivedDocument && document.activeVersionId) {
+      this.queueKnowledgeRebuild(documentId);
+    }
+    return updated;
+  }
+
+  async testDocumentRecall(documentId: string, query: string, limit = 6): Promise<KnowledgeRecallTestResult> {
+    const document = await prisma.knowledgeDocument.findUnique({
+      where: { id: documentId },
+    });
+    if (!document) {
+      throw new Error("Knowledge document not found.");
+    }
+    if (document.status === "archived") {
+      throw new Error("Archived knowledge documents cannot be recall tested.");
+    }
+    if (document.latestIndexStatus !== "succeeded") {
+      throw new Error("Knowledge document recall test is only available after indexing succeeds.");
+    }
+
+    const hits = await ragServices.hybridRetrievalService.retrieve(query, {
+      ownerTypes: ["knowledge_document"],
+      knowledgeDocumentIds: [documentId],
+      finalTopK: limit,
+      vectorCandidates: Math.max(limit * 2, 10),
+      keywordCandidates: Math.max(limit * 2, 10),
+    });
+
+    return {
+      documentId,
+      query,
+      hits: hits.map((item) => ({
+        id: item.id,
+        ownerId: item.ownerId,
+        score: item.score,
+        source: item.source,
+        title: item.title,
+        contextPrefix: item.contextPrefix,
+        chunkText: item.chunkText,
+        chunkOrder: item.chunkOrder,
+      })),
+    };
+  }
+
+  async listBindings(targetType: KnowledgeBindingTargetType, targetId: string) {
+    await this.assertTargetExists(targetType, targetId);
+    const bindings = await prisma.knowledgeBinding.findMany({
+      where: {
+        targetType,
+        targetId,
+      },
+      include: {
+        document: {
+          include: {
+            _count: {
+              select: { versions: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ createdAt: "asc" }],
+    });
+    return bindings.map((item) => ({
+      ...item.document,
+      versionCount: item.document._count.versions,
+    }));
+  }
+
+  async replaceBindings(
+    targetType: KnowledgeBindingTargetType,
+    targetId: string,
+    documentIds: string[],
+  ) {
+    await this.assertTargetExists(targetType, targetId);
+    const uniqueDocumentIds = Array.from(new Set(documentIds.map((item) => item.trim()).filter(Boolean)));
+    if (uniqueDocumentIds.length > 0) {
+      const documents = await prisma.knowledgeDocument.findMany({
+        where: {
+          id: { in: uniqueDocumentIds },
+          status: { not: "archived" },
+        },
+        select: { id: true },
+      });
+      if (documents.length !== uniqueDocumentIds.length) {
+        throw new Error("Some knowledge documents are missing or archived.");
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.knowledgeBinding.deleteMany({
+        where: {
+          targetType,
+          targetId,
+        },
+      });
+      if (uniqueDocumentIds.length > 0) {
+        await tx.knowledgeBinding.createMany({
+          data: uniqueDocumentIds.map((documentId) => ({
+            targetType,
+            targetId,
+            documentId,
+          })),
+        });
+      }
+    });
+
+    return this.listBindings(targetType, targetId);
+  }
+}

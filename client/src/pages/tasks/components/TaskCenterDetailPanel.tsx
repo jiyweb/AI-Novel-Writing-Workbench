@@ -1,0 +1,137 @@
+import type { DirectorDashboardView, DirectorRuntimeProjection } from "@ai-novel/shared/types/directorRuntime";
+import type { NovelWorkflowMilestone } from "@ai-novel/shared/types/novelWorkflow";
+import type { UnifiedTaskDetail, UnifiedTaskStep } from "@ai-novel/shared/types/task";
+import { Link } from "react-router-dom";
+import DirectorRuntimeProjectionCard from "@/components/autoDirector/DirectorRuntimeProjectionCard";
+import {
+  TaskQueueActionRow,
+  TaskQueueImpactNotice,
+  TaskQueueSection,
+  TaskQueueStatusBadge,
+  type TaskQueueSeverity,
+} from "@/components/taskQueue";
+import { Button } from "@/components/ui/button";
+import { WorkspaceStateNotice } from "@/components/workspace";
+import TaskCenterDetailSummary from "./TaskCenterDetailSummary";
+import TaskCenterMilestoneHistory from "./TaskCenterMilestoneHistory";
+
+interface TaskCenterDetailPanelProps {
+  task?: UnifiedTaskDetail | null;
+  loading: boolean;
+  errorMessage?: string | null;
+  onRetryLoad: () => void;
+  isAutoDirectorTask: boolean;
+  currentModelLabel: string;
+  dashboardView?: DirectorDashboardView | null;
+  runtimeProjection?: DirectorRuntimeProjection | null;
+  noticeSeverity: TaskQueueSeverity;
+  noticeTitle: string;
+  failureIsQualityReminder: boolean;
+  steps: UnifiedTaskStep[];
+  milestones: NovelWorkflowMilestone[];
+}
+
+export default function TaskCenterDetailPanel(props: TaskCenterDetailPanelProps) {
+  const task = props.task;
+
+  return (
+    <TaskQueueSection
+      title="任务详情"
+      description="查看当前影响、恢复位置和来源页面，运行参数按需展开。"
+      className="overflow-hidden rounded-2xl border-border/40 bg-card/60 shadow-[0_12px_36px_rgba(15,23,42,0.035)]"
+    >
+      <div className="space-y-4 text-sm">
+        {props.loading ? (
+          <WorkspaceStateNotice loading title="正在读取任务详情" description="正在同步任务状态、检查点和最近步骤。" />
+        ) : null}
+        {props.errorMessage ? (
+          <WorkspaceStateNotice
+            tone="danger"
+            title="任务详情读取失败"
+            description={props.errorMessage}
+            action={<Button size="sm" variant="outline" onClick={props.onRetryLoad}>重新读取</Button>}
+          />
+        ) : null}
+        {!props.loading && !props.errorMessage && !task ? (
+          <WorkspaceStateNotice title="请选择一个任务" description="从任务列表选择一项后，可查看影响范围、恢复位置和来源入口。" />
+        ) : null}
+
+        {task ? (
+          <>
+            <TaskCenterDetailSummary
+              task={task}
+              isAutoDirectorTask={props.isAutoDirectorTask}
+              currentModelLabel={props.currentModelLabel}
+              dashboardView={props.dashboardView}
+            />
+
+            {task.noticeCode || task.noticeSummary ? (
+              <TaskQueueImpactNotice
+                severity={props.noticeSeverity}
+                title={props.noticeTitle}
+                description={task.noticeSummary ?? "任务已记录一条需要查看的结果提醒。"}
+              />
+            ) : null}
+
+            {task.failureCode || task.failureSummary ? (
+              <TaskQueueImpactNotice
+                severity={props.failureIsQualityReminder ? "quality" : "blocking"}
+                title={props.failureIsQualityReminder ? "质量提醒" : "任务阻塞"}
+                description={task.failureSummary ?? "任务记录了需要处理的失败状态。"}
+              />
+            ) : null}
+
+            {task.lastError && !props.failureIsQualityReminder && !task.failureCode && !task.failureSummary ? (
+              <WorkspaceStateNotice tone="danger" title="最近一次执行失败" description={task.lastError} />
+            ) : null}
+
+            {task.kind === "novel_workflow" && task.checkpointSummary ? (
+              <WorkspaceStateNotice compact title="最近检查点" description={task.checkpointSummary} />
+            ) : null}
+
+            {props.isAutoDirectorTask ? <DirectorRuntimeProjectionCard projection={props.runtimeProjection} /> : null}
+
+            {props.isAutoDirectorTask ? (
+              <WorkspaceStateNotice
+                compact
+                tone="info"
+                title="导演任务来源入口"
+                description="继续、恢复、切换模型和推进策略请回到小说页面处理；运行记录只展示状态、错误、恢复位置和来源入口。"
+              />
+            ) : null}
+
+            <TaskQueueActionRow
+              title="打开来源页面"
+              consequence="只打开任务来源，不会改变任务状态。继续、恢复或重试请在来源页面完成。"
+              action={<Button asChild size="sm" variant="outline"><Link to={task.sourceRoute}>打开来源页面</Link></Button>}
+            />
+
+            <details className="group border-t border-border/35 pt-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium marker:hidden">
+                <span>执行步骤 {props.steps.length > 0 ? `(${props.steps.length})` : ""}</span>
+                <span className="text-xs font-normal text-muted-foreground group-open:hidden">展开</span>
+                <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">收起</span>
+              </summary>
+              <div className="mt-3 space-y-2">
+                {props.steps.length === 0 ? (
+                  <WorkspaceStateNotice compact title="暂无步骤状态" description="该任务尚未提供可展示的细分步骤。" />
+                ) : props.steps.map((step) => (
+                  <div key={step.key} className="flex items-center justify-between rounded-xl bg-muted/25 px-3 py-2">
+                    <div>{step.label}</div>
+                    <TaskQueueStatusBadge
+                      label={step.status === "succeeded" ? "已完成" : step.status === "failed" ? "失败" : step.status === "running" ? "进行中" : step.status === "cancelled" ? "已取消" : "未开始"}
+                      tone={step.status === "succeeded" ? "success" : step.status === "failed" ? "danger" : step.status === "running" ? "info" : "neutral"}
+                      className="border-0 bg-background/70 font-normal"
+                    />
+                  </div>
+                ))}
+              </div>
+            </details>
+
+            {task.kind === "novel_workflow" ? <TaskCenterMilestoneHistory milestones={props.milestones} /> : null}
+          </>
+        ) : null}
+      </div>
+    </TaskQueueSection>
+  );
+}

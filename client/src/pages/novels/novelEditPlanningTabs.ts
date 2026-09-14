@@ -1,0 +1,307 @@
+import type {
+  BasicTabProps,
+  OutlineTabViewProps,
+  StructuredTabViewProps,
+} from "./components/NovelEditView.types";
+import type { NovelBasicFormState } from "./novelBasicInfo.shared";
+import type { VolumeSyncOptions } from "./volumePlan.utils";
+import type {
+  VolumeBeatSheet,
+  VolumeCountGuidance,
+  VolumeCritiqueReport,
+  VolumeImpactResult,
+  VolumePlan,
+  VolumePlanDiff,
+  VolumePlanVersionSummary,
+  VolumePlanningReadiness,
+  VolumeRebalanceDecision,
+  VolumeStrategyPlan,
+  VolumeSyncPreview,
+} from "@ai-novel/shared/types/novel";
+import type { StoryWorldSliceOverrides, StoryWorldSliceView } from "@ai-novel/shared/types/storyWorldSlice";
+import type {
+  NovelWorldGenerateInput,
+  NovelWorldImportInput,
+  NovelWorldManualInput,
+  NovelWorldSaveToLibraryInput,
+  NovelWorldSyncDiff,
+  NovelWorldSyncInput,
+  NovelWorldView,
+} from "@ai-novel/shared/types/novelWorld";
+import type { BookAnalysisSectionKey } from "@ai-novel/shared/types/bookAnalysis";
+import type { ExistingOutlineChapter } from "./volumePlan.utils";
+
+interface BuildNovelEditPlanningTabsInput {
+  id: string;
+  basicForm: NovelBasicFormState;
+  genreOptions: BasicTabProps["genreOptions"];
+  storyModeOptions: BasicTabProps["storyModeOptions"];
+  worldOptions: BasicTabProps["worldOptions"];
+  sourceNovelOptions: BasicTabProps["sourceNovelOptions"];
+  sourceKnowledgeOptions: BasicTabProps["sourceKnowledgeOptions"];
+  sourceNovelBookAnalysisOptions: BasicTabProps["sourceNovelBookAnalysisOptions"];
+  isLoadingSourceNovelBookAnalyses: boolean;
+  availableBookAnalysisSections: Array<{ key: BookAnalysisSectionKey; title: string }>;
+  novelWorldView?: NovelWorldView | null;
+  novelWorldSyncDiff?: NovelWorldSyncDiff | null;
+  worldSliceView?: StoryWorldSliceView | null;
+  worldSliceMessage: string;
+  isLoadingNovelWorld: boolean;
+  isImportingNovelWorld: boolean;
+  isGeneratingNovelWorld: boolean;
+  isCreatingManualNovelWorld: boolean;
+  isSavingNovelWorldToLibrary: boolean;
+  isLoadingNovelWorldSyncDiff: boolean;
+  isSyncingNovelWorld: boolean;
+  isRefreshingWorldSlice: boolean;
+  isSavingWorldSliceOverrides: boolean;
+  onBasicFormChange: (patch: Partial<NovelBasicFormState>) => void;
+  onSaveBasic: () => void;
+  onImportNovelWorld: (payload: NovelWorldImportInput) => void;
+  onCreateManualNovelWorld: (payload?: NovelWorldManualInput) => void;
+  onGenerateNovelWorld: (payload: NovelWorldGenerateInput) => void;
+  onSaveNovelWorldToLibrary: (payload?: NovelWorldSaveToLibraryInput) => void;
+  onSyncNovelWorld: (payload: NovelWorldSyncInput) => void;
+  onRefreshWorldSlice: () => void;
+  onSaveWorldSliceOverrides: (patch: StoryWorldSliceOverrides) => void;
+  isSavingBasic: boolean;
+  projectQuickStart?: BasicTabProps["projectQuickStart"];
+  basicDirectorTakeoverEntry?: BasicTabProps["directorTakeoverEntry"];
+  storyMacroDirectorTakeoverEntry?: StructuredTabViewProps["directorTakeoverEntry"];
+  outlineDirectorTakeoverEntry?: StructuredTabViewProps["directorTakeoverEntry"];
+  structuredDirectorTakeoverEntry?: StructuredTabViewProps["directorTakeoverEntry"];
+  worldInjectionSummary: string | null;
+  hasCharacters: boolean;
+  hasUnsavedVolumeDraft: boolean;
+  generationNotice: string;
+  readiness: VolumePlanningReadiness;
+  volumeCountGuidance: VolumeCountGuidance;
+  customVolumeCountEnabled: boolean;
+  customVolumeCountInput: string;
+  onCustomVolumeCountEnabledChange: (enabled: boolean) => void;
+  onCustomVolumeCountInputChange: (value: string) => void;
+  onApplyCustomVolumeCount: () => void;
+  onRestoreSystemRecommendedVolumeCount: () => void;
+  strategyPlan: VolumeStrategyPlan | null;
+  critiqueReport: VolumeCritiqueReport | null;
+  isGeneratingStrategy: boolean;
+  onGenerateStrategy: () => void;
+  isCritiquingStrategy: boolean;
+  onCritiqueStrategy: () => void;
+  isGeneratingSkeleton: boolean;
+  onGenerateSkeleton: () => void;
+  onGoToCharacterTab: () => void;
+  onGoToStructuredTab: () => void;
+  latestStateSnapshot?: OutlineTabViewProps["latestStateSnapshot"];
+  payoffLedger?: OutlineTabViewProps["payoffLedger"];
+  characterResources?: OutlineTabViewProps["characterResources"];
+  outlineText: string;
+  structuredDraftText: string;
+  volumes: VolumePlan[];
+  onVolumeFieldChange: OutlineTabViewProps["onVolumeFieldChange"];
+  onOpenPayoffsChange: OutlineTabViewProps["onOpenPayoffsChange"];
+  onAddVolume: () => void;
+  onRemoveVolume: (volumeId: string) => void;
+  onMoveVolume: (volumeId: string, direction: -1 | 1) => void;
+  onSaveOutline: () => void;
+  isSavingOutline: boolean;
+  volumeMessage: string;
+  volumeVersions: VolumePlanVersionSummary[];
+  selectedVersionId: string;
+  onSelectedVersionChange: (id: string) => void;
+  onCreateDraftVersion: () => void;
+  isCreatingDraftVersion: boolean;
+  onLoadSelectedVersionToDraft: () => void;
+  onActivateVersion: () => void;
+  isActivatingVersion: boolean;
+  onFreezeVersion: () => void;
+  isFreezingVersion: boolean;
+  onLoadVersionDiff: () => void;
+  isLoadingVersionDiff: boolean;
+  diffResult: VolumePlanDiff | null;
+  onAnalyzeDraftImpact: () => void;
+  isAnalyzingDraftImpact: boolean;
+  onAnalyzeVersionImpact: () => void;
+  isAnalyzingVersionImpact: boolean;
+  impactResult: VolumeImpactResult | null;
+  beatSheets: VolumeBeatSheet[];
+  rebalanceDecisions: VolumeRebalanceDecision[];
+  isGeneratingBeatSheet: boolean;
+  onGenerateBeatSheet: (volumeId: string) => void;
+  isGeneratingChapterList: boolean;
+  generatingChapterListVolumeId: string;
+  generatingChapterListBeatKey: string;
+  generatingChapterListMode: StructuredTabViewProps["generatingChapterListMode"];
+  onGenerateChapterList: StructuredTabViewProps["onGenerateChapterList"];
+  isGeneratingChapterDetail: boolean;
+  isGeneratingChapterDetailBundle: boolean;
+  generatingChapterDetailMode: StructuredTabViewProps["generatingChapterDetailMode"];
+  generatingChapterDetailChapterId: string;
+  chapterDetailFailure: StructuredTabViewProps["chapterDetailFailure"];
+  onGenerateChapterDetail: StructuredTabViewProps["onGenerateChapterDetail"];
+  onGenerateChapterDetailBundle: StructuredTabViewProps["onGenerateChapterDetailBundle"];
+  onRetryFailedChapterDetail: StructuredTabViewProps["onRetryFailedChapterDetail"];
+  syncPreview: VolumeSyncPreview;
+  syncOptions: VolumeSyncOptions;
+  onSyncOptionsChange: (patch: Partial<VolumeSyncOptions>) => void;
+  onApplySync: (options: { preserveContent: boolean; applyDeletes: boolean }) => void;
+  isApplyingSync: boolean;
+  syncMessage: string;
+  chapters: ExistingOutlineChapter[];
+  onChapterFieldChange: StructuredTabViewProps["onChapterFieldChange"];
+  onChapterNumberChange: StructuredTabViewProps["onChapterNumberChange"];
+  onChapterPayoffRefsChange: (volumeId: string, chapterId: string, value: string) => void;
+  onAddChapter: (volumeId: string) => void;
+  onRemoveChapter: (volumeId: string, chapterId: string) => void;
+  onMoveChapter: (volumeId: string, chapterId: string, direction: -1 | 1) => void;
+  onApplyBatch: (patch: { conflictLevel?: number; targetWordCount?: number; generateTaskSheet?: boolean }) => void;
+  onSaveStructured: () => void;
+  isSavingStructured: boolean;
+}
+
+export function buildNovelEditPlanningTabs(input: BuildNovelEditPlanningTabsInput): {
+  basicTab: BasicTabProps;
+  outlineTab: OutlineTabViewProps;
+  structuredTab: StructuredTabViewProps;
+} {
+  const basicTab: BasicTabProps = {
+    novelId: input.id,
+    basicForm: input.basicForm,
+    genreOptions: input.genreOptions,
+    storyModeOptions: input.storyModeOptions,
+    worldOptions: input.worldOptions,
+    sourceNovelOptions: input.sourceNovelOptions,
+    sourceKnowledgeOptions: input.sourceKnowledgeOptions,
+    sourceNovelBookAnalysisOptions: input.sourceNovelBookAnalysisOptions,
+    isLoadingSourceNovelBookAnalyses: input.isLoadingSourceNovelBookAnalyses,
+    availableBookAnalysisSections: input.availableBookAnalysisSections,
+    novelWorldView: input.novelWorldView,
+    novelWorldSyncDiff: input.novelWorldSyncDiff,
+    worldSliceView: input.worldSliceView,
+    worldSliceMessage: input.worldSliceMessage,
+    isLoadingNovelWorld: input.isLoadingNovelWorld,
+    isImportingNovelWorld: input.isImportingNovelWorld,
+    isGeneratingNovelWorld: input.isGeneratingNovelWorld,
+    isCreatingManualNovelWorld: input.isCreatingManualNovelWorld,
+    isSavingNovelWorldToLibrary: input.isSavingNovelWorldToLibrary,
+    isLoadingNovelWorldSyncDiff: input.isLoadingNovelWorldSyncDiff,
+    isSyncingNovelWorld: input.isSyncingNovelWorld,
+    isRefreshingWorldSlice: input.isRefreshingWorldSlice,
+    isSavingWorldSliceOverrides: input.isSavingWorldSliceOverrides,
+    onFormChange: input.onBasicFormChange,
+    onSave: input.onSaveBasic,
+    onImportNovelWorld: input.onImportNovelWorld,
+    onCreateManualNovelWorld: input.onCreateManualNovelWorld,
+    onGenerateNovelWorld: input.onGenerateNovelWorld,
+    onSaveNovelWorldToLibrary: input.onSaveNovelWorldToLibrary,
+    onSyncNovelWorld: input.onSyncNovelWorld,
+    onRefreshWorldSlice: input.onRefreshWorldSlice,
+    onSaveWorldSliceOverrides: input.onSaveWorldSliceOverrides,
+    isSaving: input.isSavingBasic,
+    projectQuickStart: input.projectQuickStart,
+    directorTakeoverEntry: input.basicDirectorTakeoverEntry,
+  };
+
+  const outlineTab: OutlineTabViewProps = {
+    worldInjectionSummary: input.worldInjectionSummary,
+    hasCharacters: input.hasCharacters,
+    hasUnsavedVolumeDraft: input.hasUnsavedVolumeDraft,
+    generationNotice: input.generationNotice,
+    readiness: input.readiness,
+    volumeCountGuidance: input.volumeCountGuidance,
+    customVolumeCountEnabled: input.customVolumeCountEnabled,
+    customVolumeCountInput: input.customVolumeCountInput,
+    onCustomVolumeCountEnabledChange: input.onCustomVolumeCountEnabledChange,
+    onCustomVolumeCountInputChange: input.onCustomVolumeCountInputChange,
+    onApplyCustomVolumeCount: input.onApplyCustomVolumeCount,
+    onRestoreSystemRecommendedVolumeCount: input.onRestoreSystemRecommendedVolumeCount,
+    strategyPlan: input.strategyPlan,
+    critiqueReport: input.critiqueReport,
+    isGeneratingStrategy: input.isGeneratingStrategy,
+    onGenerateStrategy: input.onGenerateStrategy,
+    isCritiquingStrategy: input.isCritiquingStrategy,
+    onCritiqueStrategy: input.onCritiqueStrategy,
+    isGeneratingSkeleton: input.isGeneratingSkeleton,
+    onGenerateSkeleton: input.onGenerateSkeleton,
+    onGoToCharacterTab: input.onGoToCharacterTab,
+    onGoToStructuredTab: input.onGoToStructuredTab,
+    latestStateSnapshot: input.latestStateSnapshot,
+    payoffLedger: input.payoffLedger,
+    characterResources: input.characterResources,
+    draftText: input.outlineText,
+    volumes: input.volumes,
+    onVolumeFieldChange: input.onVolumeFieldChange,
+    onOpenPayoffsChange: input.onOpenPayoffsChange,
+    onAddVolume: input.onAddVolume,
+    onRemoveVolume: input.onRemoveVolume,
+    onMoveVolume: input.onMoveVolume,
+    onSave: input.onSaveOutline,
+    isSaving: input.isSavingOutline,
+    volumeMessage: input.volumeMessage,
+    volumeVersions: input.volumeVersions,
+    selectedVersionId: input.selectedVersionId,
+    onSelectedVersionChange: input.onSelectedVersionChange,
+    onCreateDraftVersion: input.onCreateDraftVersion,
+    isCreatingDraftVersion: input.isCreatingDraftVersion,
+    onLoadSelectedVersionToDraft: input.onLoadSelectedVersionToDraft,
+    onActivateVersion: input.onActivateVersion,
+    isActivatingVersion: input.isActivatingVersion,
+    onFreezeVersion: input.onFreezeVersion,
+    isFreezingVersion: input.isFreezingVersion,
+    onLoadVersionDiff: input.onLoadVersionDiff,
+    isLoadingVersionDiff: input.isLoadingVersionDiff,
+    diffResult: input.diffResult,
+    onAnalyzeDraftImpact: input.onAnalyzeDraftImpact,
+    isAnalyzingDraftImpact: input.isAnalyzingDraftImpact,
+    onAnalyzeVersionImpact: input.onAnalyzeVersionImpact,
+    isAnalyzingVersionImpact: input.isAnalyzingVersionImpact,
+    impactResult: input.impactResult,
+    directorTakeoverEntry: input.outlineDirectorTakeoverEntry,
+  };
+
+  const structuredTab: StructuredTabViewProps = {
+    novelId: input.id,
+    directorTakeoverEntry: input.structuredDirectorTakeoverEntry,
+    ...outlineTab,
+    beatSheets: input.beatSheets,
+    rebalanceDecisions: input.rebalanceDecisions,
+    draftText: input.structuredDraftText,
+    isGeneratingBeatSheet: input.isGeneratingBeatSheet,
+    onGenerateBeatSheet: input.onGenerateBeatSheet,
+    isGeneratingChapterList: input.isGeneratingChapterList,
+    generatingChapterListVolumeId: input.generatingChapterListVolumeId,
+    generatingChapterListBeatKey: input.generatingChapterListBeatKey,
+    generatingChapterListMode: input.generatingChapterListMode,
+    onGenerateChapterList: input.onGenerateChapterList,
+    isGeneratingChapterDetail: input.isGeneratingChapterDetail,
+    isGeneratingChapterDetailBundle: input.isGeneratingChapterDetailBundle,
+    generatingChapterDetailMode: input.generatingChapterDetailMode,
+    generatingChapterDetailChapterId: input.generatingChapterDetailChapterId,
+    chapterDetailFailure: input.chapterDetailFailure,
+    onGenerateChapterDetail: input.onGenerateChapterDetail,
+    onGenerateChapterDetailBundle: input.onGenerateChapterDetailBundle,
+    onRetryFailedChapterDetail: input.onRetryFailedChapterDetail,
+    syncPreview: input.syncPreview,
+    syncOptions: input.syncOptions,
+    onSyncOptionsChange: input.onSyncOptionsChange,
+    onApplySync: input.onApplySync,
+    isApplyingSync: input.isApplyingSync,
+    syncMessage: input.syncMessage,
+    chapters: input.chapters,
+    onChapterFieldChange: input.onChapterFieldChange,
+    onChapterNumberChange: input.onChapterNumberChange,
+    onChapterPayoffRefsChange: input.onChapterPayoffRefsChange,
+    onAddChapter: input.onAddChapter,
+    onRemoveChapter: input.onRemoveChapter,
+    onMoveChapter: input.onMoveChapter,
+    onApplyBatch: input.onApplyBatch,
+    onSave: input.onSaveStructured,
+    isSaving: input.isSavingStructured,
+  };
+
+  return {
+    basicTab,
+    outlineTab,
+    structuredTab,
+  };
+}
