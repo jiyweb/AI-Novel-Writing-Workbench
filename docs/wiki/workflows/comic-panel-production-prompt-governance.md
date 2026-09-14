@@ -27,11 +27,24 @@
 
 四格漫画项目仍通过项目形态 `4koma` 锁定版式关键词。为了避免把一个项目生成成大量“四格页”，四格模式的默认目标格数低于条漫模式；每张图的四格起承转合结构由 `visualPrompt` 和版式关键词共同约束。
 
+## Script Token Budget
+
+45 格条漫的完整结构化 JSON 约 1.2–2 万 token。曾经因为不显式传 `maxTokens`，DeepSeek 等模型按 8192 默认上限截断输出，JSON repair 无法补救，表现为「生成分格脚本失败」。因此分格脚本生成必须先解析输出预算，不允许依赖各厂商隐式默认值。
+
+`ComicPanelScriptService.resolveScriptTokenBudget(targetPanelCount, comicFormat, provider)` 做两层收口：
+
+1. 按目标格数估算期望预算（常规每格约 420 token，四格每格约 650 token，再加 2500 固定开销），通过 `resolveModel("chapter_drafting", { provider, maxTokens: desired })` 探测模型能力。
+2. 镜像模型工厂再收一次口：用 `resolveStructuredOutputProfile` + `toStructuredOutputStrategy` 判断该模型走原生 JSON 还是兼容（JSON-in-text）协议；原生协议可省略/放宽上限，兼容协议必须再用 `safeStructuredMaxTokens` 截断。最终返回 `{ maxTokens, tightBudget }`。
+
+`tightBudget=true` 表示模型安全输出上限装不下常规写法，PromptAsset 会切换到规则 12 的极简输出约束（visualPrompt/focus/action 词数、每格泡数与泡内字数、characterRefs 精简字段、场景可选字段省略）。这是**让模型少写字**，不是让 JSON repair 去猜缺失字段；repair 只兜底轻微语法问题。
+
+调用同时固定 `timeoutMs = 300_000`（长 JSON 生成经常超过通用超时）。分话大纲等其他文本链路不走这套预算，只有分格脚本需要。
+
 ## Persistence Contract
 
 分格提示词控制会把生成时的整话配置和单格结构化结果落库，便于后续审查、重生图和排查提示词效果。
 
-- `ComicEpisode.scriptConfig` 保存本次分格脚本生成配置，包括 `densityMode`、`targetPanelCount`、`comicFormat`、`scriptPromptInstruction`、`promptAssetId`、`promptAssetVersion`、`provider` 和 `generatedAt`。它记录“这次脚本是按什么控制项生成的”，不是新的自由 prompt 入口。
+- `ComicEpisode.scriptConfig` 保存本次分格脚本生成配置，包括 `densityMode`、`targetPanelCount`、`comicFormat`、`scriptPromptInstruction`、`promptAssetId`、`promptAssetVersion`、`provider`、`maxTokens`、`tightBudget` 和 `generatedAt`。它记录“这次脚本是按什么控制项生成的”，不是新的自由 prompt 入口；排查截断类失败时先看这里的预算是否被压到 tightBudget。
 - `ComicPanel.densityLevel` 保存 LLM 对单格信息密度的结构化判断，取值为 `low / medium / high`。`densityMode` 控制整话倾向，`densityLevel` 记录单格结果，二者不能混用。
 - `ComicPanel.focus` 保存单格主视觉焦点，用于帮助用户审查画面是否聚焦，也为后续重抽和导出提供稳定摘要。
 - `ComicPanel.layoutData` 保存结构化版式信息；四格模式下可记录 `four_koma` 与 `subPanels`，避免只靠一段 `visualPrompt` 承载四格起承转合。
@@ -87,6 +100,15 @@
 
 注意区分 `stylePreset.style`（画风：webtoon_color / ink_traditional / shounen_bw 等）与 `stylePreset.promptKeywords`（漫画形态：竖条漫 / 四格等）。**前者注入到角色/资产/场景；后者只注入到最终格子图**——因为角色/资产/场景 reference sheet 不是某种"漫画版式"，不该带"竖条漫"这类形态词。
 
+### 自定义画风透传
+
+`stylePreset.style = "custom"` 时，画风原文存在 `stylePreset.customStyle`（前端上限 300 字、后端上限 500 字）。规则：
+
+- `resolveComicStyleKeywords/En` 对自定义画风**原文透传，不回退任何默认画风词**；英文关键词为空时直接回传中文原文。这样用户写"赛博朋克美漫"就不会被偷偷改回彩色韩漫。
+- 文本类 LLM（分话大纲、分格脚本）拿到的是 `resolveComicStyleLabel()` 的可读标签（格式「自定义画风：{原文}」），不是裸 id；内置画风也同样使用中文短句标签，避免 LLM 把 `webtoon_color` 当成需要翻译/扩写的英文片段。
+- 保存时若选择 custom 但文本为空，后端直接报错，不允许落一个"空自定义"。
+- 前端画风选项统一定义在 `client/src/pages/comic/comicStyle.ts`，后端解析在 `server/src/services/comic/comicStylePrompt.ts`；新增内置画风必须两端同步。
+
 ## Reference Image Metadata
 
 生格子图时，`finalRefImagePaths` 中实际用到的素材会同步收集为 `PanelReferenceImageMeta[]` 写入 `imageData.referenceImages`：
@@ -108,6 +130,8 @@
 - 如果跨话事实没有来源话序或类别，后续分格提示词无法判断它是剧情事实、揭示信息还是状态变化，容易造成连续性误导。
 - 如果 LLM 把"XX说"塞进 `dialogues[].text`，气泡里会出现叙述前缀。stripSpeakerPrefix 是兜底，但根因应通过 prompt 工程改进，不要依赖 regex。
 - 如果新加生图入口未走 `comicStylePrompt`，画风会回退到 webtoon 模板，与项目画风冲突。新生图链路必须接入这个单一来源。
+- 如果分格脚本不显式解析 token 预算，格数一多就会被模型默认上限截断，repair 无法还原缺失尾部，整话生成失败。新加的整话结构化生成都要先过 `resolveScriptTokenBudget`，不要假设模型默认上限足够。
+- 如果 tightBudget 只在调用层生效、PromptAsset 没有对应精简规则，模型仍会按常规词数写满然后被截断。预算与写法规则必须成对维护（PromptAsset 规则 12）。
 
 ## Related Modules
 

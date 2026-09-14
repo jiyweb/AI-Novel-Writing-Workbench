@@ -22,6 +22,11 @@
 - 图片生成执行时读取任务上的 provider 和 model，再用该 provider 保存的 API 地址和 API Key 调用 `/images/generations`。
 - 自定义或本地 OpenAI 兼容服务可以不填写 API Key；请求会省略 Authorization 头。
 - 角色形象图的前端选择列表必须来自当前设置数据，不能写死为 `openai`、`siliconflow`、`grok` 之类的固定列表。
+- 漫画项目页头部是「厂商 + 模型」两级选择：厂商下拉只列出已配置且 `supportsImageGeneration` 的厂商；模型下拉列出该厂商已配置的生图模型（`imageModels`，含当前选择、默认模型与推荐选项的去重并集）。两级的持久化范围不同，不要混用：
+  - 厂商选择只记在浏览器 localStorage（`comic.preferredImageProvider`），属于"这个项目在这台机器上用哪家生图"的工作偏好；缓存的厂商失效时回退第一个可用厂商。
+  - 模型切换通过 `PUT /settings/api-keys/:provider { imageModel }` 保存为该厂商的默认生图模型（`provider.imageModel.<provider>`），对全书所有图片入口全局生效；所有漫画生图调用（角色三视图/表情/资产/场景/格子/批量）只透传 provider，模型由后端 `resolveImageModel` 统一解析。
+  - 没有任何可用厂商时，页面不放一个点击必失败的下拉，而是显示「去模型设置配置」入口。
+- **文本 LLM 调用严禁透传生图厂商**：`textCapable:false` 的厂商（grsai）只有图像接口，分话大纲、分格脚本等结构化文本调用不传 provider（走文本模型路由），否则会请求到不存在的对话接口而报错。
 
 ### 厂商能力标记（textCapable）
 
@@ -45,6 +50,7 @@
 - 如果后端只允许固定厂商进入图像生成，前端动态列表会把可选项交给用户，但任务提交后失败。
 - 如果删除自定义厂商时保留旧图像模型设置，后续重建同名厂商可能继承过期图片模型，造成难以解释的配置污染。
 - 纯生图厂商若漏标 `textCapable: false`，会同时出现在文本模型下拉、新手引导和 RAG 向量列表中，用户配置后所有文字任务都会调用失败。
+- 如果把漫画头部的厂商选择当成全局设置保存（或把模型切换只存在 localStorage），会出现"换了项目/机器模型选择丢失"或"厂商偏好污染全局文本任务"两类问题；厂商偏好与模型默认值的持久化边界必须保持上文的划分。
 - GrsAI 是异步任务协议，若把首次返回的 `running` 当作成功，会得到空结果；必须轮询到 `succeeded` 再取 `results[].url`。
 
 ## Related Modules
