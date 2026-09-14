@@ -21,6 +21,7 @@ import {
   getProviderEnvModel,
   isBuiltInProvider,
   providerRequiresApiKey,
+  providerSupportsText,
   PROVIDERS,
   SUPPORTED_PROVIDERS,
 } from "../llm/providers";
@@ -155,6 +156,7 @@ type BuiltInProviderStatus = {
   requiresApiKey: boolean;
   isConfigured: boolean;
   isActive: boolean;
+  textCapable: boolean;
   reasoningEnabled: boolean;
   reasoningEffort: ReasoningEffort | null;
   supportsReasoningEffort: boolean;
@@ -181,6 +183,7 @@ type CustomProviderStatus = {
   requiresApiKey: boolean;
   isConfigured: boolean;
   isActive: boolean;
+  textCapable: boolean;
   reasoningEnabled: boolean;
   reasoningEffort: ReasoningEffort | null;
   supportsReasoningEffort: boolean;
@@ -233,19 +236,30 @@ function buildBuiltInProviderStatus(
   const savedKey = normalizeOptionalText(item?.key);
   const envKey = getProviderEnvApiKey(provider);
   const effectiveKey = savedKey ?? envKey;
+  const textCapable = providerSupportsText(provider);
   const savedBaseURL = normalizeOptionalText(item?.baseURL);
-  const configuredModel = normalizeOptionalText(item?.model) ?? getProviderEnvModel(provider);
+  const configuredModel = textCapable
+    ? normalizeOptionalText(item?.model) ?? getProviderEnvModel(provider)
+    : undefined;
   const currentBaseURL = savedBaseURL
     ?? getProviderEnvBaseUrl(provider)
     ?? PROVIDERS[provider].baseURL;
   const requiresApiKey = providerRequiresApiKey(provider);
   const hiddenModels = parseHiddenModels(item?.hiddenModels);
-  const fallbackModels = getFallbackModels(provider, configuredModel);
+  const fallbackModels = textCapable ? getFallbackModels(provider, configuredModel) : [];
   const currentModel = configuredModel ?? fallbackModels[0] ?? "";
-  const models = filterHiddenModels(fallbackModels, hiddenModels, currentModel);
+  const models = textCapable
+    ? filterHiddenModels(fallbackModels, hiddenModels, currentModel)
+    : [];
   const currentImageModel = imageModel ?? getDefaultImageModel(provider) ?? null;
-  const isConfigured = requiresApiKey ? Boolean(effectiveKey && currentModel) : Boolean(currentModel && currentBaseURL);
-  const supportsReasoningEffort = isDeepSeekThinkingModeProvider(provider, currentBaseURL, currentModel);
+  const isConfigured = !textCapable
+    ? (requiresApiKey ? Boolean(effectiveKey) : true) && Boolean(currentImageModel)
+    : requiresApiKey
+      ? Boolean(effectiveKey && currentModel)
+      : Boolean(currentModel && currentBaseURL);
+  const supportsReasoningEffort = textCapable
+    ? isDeepSeekThinkingModeProvider(provider, currentBaseURL, currentModel)
+    : false;
 
   return {
     provider,
@@ -264,6 +278,7 @@ function buildBuiltInProviderStatus(
     requiresApiKey,
     isConfigured,
     isActive: item?.isActive ?? isConfigured,
+    textCapable,
     reasoningEnabled: item?.reasoningEnabled ?? true,
     reasoningEffort: supportsReasoningEffort ? normalizeReasoningEffort(item?.reasoningEffort) : null,
     supportsReasoningEffort,
@@ -311,6 +326,7 @@ function buildCustomProviderStatus(item: {
     requiresApiKey: false,
     isConfigured: Boolean(currentModel && currentBaseURL),
     isActive: item.isActive,
+    textCapable: true,
     reasoningEnabled: item.reasoningEnabled ?? true,
     reasoningEffort: supportsReasoningEffort ? normalizeReasoningEffort(item.reasoningEffort) : null,
     supportsReasoningEffort,
@@ -572,9 +588,12 @@ router.put(
       const nextConcurrencyLimit = body.concurrencyLimit ?? normalizeProviderLimit(existingRecord?.concurrencyLimit);
       const nextRequestIntervalMs = body.requestIntervalMs ?? normalizeProviderLimit(existingRecord?.requestIntervalMs);
       const requiresApiKey = providerRequiresApiKey(provider);
-      const effectiveCurrentModel = nextModel
-        ?? getProviderEnvModel(provider)
-        ?? (isBuiltInProvider(provider) ? PROVIDERS[provider].defaultModel : undefined);
+      const textCapable = isBuiltInProvider(provider) ? providerSupportsText(provider) : true;
+      const effectiveCurrentModel = !textCapable
+        ? undefined
+        : nextModel
+          ?? getProviderEnvModel(provider)
+          ?? (isBuiltInProvider(provider) ? PROVIDERS[provider].defaultModel : undefined);
 
       if (body.isActive === false) {
         const [routeInUse, selection, ragSettings, ragRuntimeSettings] = await Promise.all([
@@ -659,21 +678,25 @@ router.put(
       evictSharedLimiters(provider);
 
       const hiddenModels = parseHiddenModels(data.hiddenModels);
-      let models = filterHiddenModels(getFallbackModels(provider, data.model ?? undefined), hiddenModels, data.model ?? undefined);
+      let models = textCapable
+        ? filterHiddenModels(getFallbackModels(provider, data.model ?? undefined), hiddenModels, data.model ?? undefined)
+        : [];
       let message = "厂商配置已保存。";
-      try {
-        models = filterHiddenModels(
-          await refreshProviderModels(
-            provider,
-            effectiveKey,
-            nextBaseURL ?? getProviderEnvBaseUrl(provider),
-            nextAuthMode,
-          ),
-          hiddenModels,
-          data.model ?? undefined,
-        );
-      } catch {
-        message = "厂商配置已保存，但模型列表刷新失败。可以稍后在厂商卡片中刷新。";
+      if (textCapable) {
+        try {
+          models = filterHiddenModels(
+            await refreshProviderModels(
+              provider,
+              effectiveKey,
+              nextBaseURL ?? getProviderEnvBaseUrl(provider),
+              nextAuthMode,
+            ),
+            hiddenModels,
+            data.model ?? undefined,
+          );
+        } catch {
+          message = "厂商配置已保存，但模型列表刷新失败。可以稍后在厂商卡片中刷新。";
+        }
       }
 
       res.status(200).json({
@@ -696,6 +719,7 @@ router.put(
           requestIntervalMs: normalizeProviderLimit(data.requestIntervalMs),
           models,
           imageModels,
+          textCapable,
           supportsImageGeneration: Boolean(currentImageModel),
         },
         message,
@@ -715,6 +739,7 @@ router.put(
         requestIntervalMs: number;
         models: string[];
         imageModels: string[];
+        textCapable: boolean;
         supportsImageGeneration: boolean;
       }>);
     } catch (error) {

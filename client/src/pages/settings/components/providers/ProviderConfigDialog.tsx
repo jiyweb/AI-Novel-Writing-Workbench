@@ -84,6 +84,7 @@ export default function ProviderConfigDialog({
   const canSelectListedModels = selectableModels.length > 0;
   const imageModelOptions = editingConfig?.imageModels ?? [];
   const canSelectImageModels = imageModelOptions.length > 0;
+  const imageOnlyBuiltIn = !isCustomDialog && !isCreatingCustomProvider && editingConfig?.textCapable === false;
   const modelGuidance = editingConfig?.provider === "deepseek"
     ? "推荐使用 DeepSeek V4 Flash，兼顾中文长篇质量与响应速度；也可以选择其他可用模型。"
     : isCreatingCustomProvider
@@ -103,14 +104,16 @@ export default function ProviderConfigDialog({
               {submitLabel}
             </Button>
 
-            <Button
-              variant="secondary"
-              className="w-full sm:w-auto"
-              onClick={onTest}
-              disabled={testDisabled}
-            >
-              测试连接
-            </Button>
+            {imageOnlyBuiltIn ? null : (
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={onTest}
+                disabled={testDisabled}
+              >
+                测试连接
+              </Button>
+            )}
 
             {editingConfig?.kind === "custom" ? (
               <Button
@@ -147,7 +150,9 @@ export default function ProviderConfigDialog({
           <DialogSection
             icon={<KeyRound className="h-3.5 w-3.5 text-primary" />}
             title="连接凭据"
-            description="同一套凭据同时用于下面的文本模型和生图模型，只需填写一次。"
+            description={imageOnlyBuiltIn
+              ? "凭据用于这个厂商的生图模型，填写后即可生成角色图、封面和漫画图。"
+              : "同一套凭据同时用于下面的文本模型和生图模型，只需填写一次。"}
           >
             <div className="space-y-1.5">
               <Input
@@ -204,7 +209,9 @@ export default function ProviderConfigDialog({
               <div className="text-xs text-muted-foreground">
                 {isCreatingCustomProvider
                   ? "填写 OpenAI 兼容 API 地址，通常以 /v1 结尾；本地 Ollama 常见地址是 http://127.0.0.1:11434/v1。"
-                  : "留空会使用默认地址；本地 Ollama 常见地址是 http://127.0.0.1:11434/v1。"}
+                  : editingConfig?.provider === "grsai"
+                    ? "默认使用全球节点；国内访问较慢时，可改成国内节点 https://grsai.dakka.com.cn。"
+                    : "留空会使用默认地址；本地 Ollama 常见地址是 http://127.0.0.1:11434/v1。"}
               </div>
             </div>
 
@@ -228,41 +235,50 @@ export default function ProviderConfigDialog({
             ) : null}
           </DialogSection>
 
-          <DialogSection
-            icon={<Bot className="h-3.5 w-3.5 text-primary" />}
-            title="文本模型"
-            description="用于写作、大纲、审稿、改写等全部文字任务。"
-            withDivider
-          >
-            {canSelectListedModels ? (
+          {imageOnlyBuiltIn ? (
+            <div className="space-y-1.5 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground border-t border-border/60 pt-5">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground"><Bot className="h-3.5 w-3.5 text-primary" /> 文本模型</div>
+              <div>这个厂商只提供图片生成模型，不能用于写作、审稿等文字任务；文字创作请在「文本模型」分区选择其他厂商。</div>
+            </div>
+          ) : (
+            <DialogSection
+              icon={<Bot className="h-3.5 w-3.5 text-primary" />}
+              title="文本模型"
+              description="用于写作、大纲、审稿、改写等全部文字任务。"
+              withDivider
+            >
+              {canSelectListedModels ? (
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">可用模型</div>
+                  <SearchableSelect
+                    value={form.model}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, model: value }))}
+                    options={selectableModels.map((model) => ({ value: model }))}
+                    placeholder="选择模型"
+                    searchPlaceholder="搜索模型"
+                    emptyText="没有可用模型"
+                  />
+                </div>
+              ) : null}
+
               <div className="space-y-1">
-                <div className="text-xs text-muted-foreground">可用模型</div>
-                <SearchableSelect
+                <div className="text-xs text-muted-foreground">{primaryModelLabel}</div>
+                <div className="text-xs text-muted-foreground">{modelGuidance}</div>
+                <Input
                   value={form.model}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, model: value }))}
-                  options={selectableModels.map((model) => ({ value: model }))}
-                  placeholder="选择模型"
-                  searchPlaceholder="搜索模型"
-                  emptyText="没有可用模型"
+                  placeholder="也可以直接手动输入模型名"
+                  onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))}
                 />
               </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">{primaryModelLabel}</div>
-              <div className="text-xs text-muted-foreground">{modelGuidance}</div>
-              <Input
-                value={form.model}
-                placeholder="也可以直接手动输入模型名"
-                onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))}
-              />
-            </div>
-          </DialogSection>
+            </DialogSection>
+          )}
 
           <DialogSection
             icon={<Image className="h-3.5 w-3.5 text-primary" />}
-            title="生图模型（可选）"
-            description="用于角色形象、小说封面、漫画格子等图片生成；留空则这个厂商只用于文字任务。"
+            title={imageOnlyBuiltIn ? "生图模型" : "生图模型（可选）"}
+            description={imageOnlyBuiltIn
+              ? "用于角色形象、小说封面、漫画格子等图片生成；这个厂商只提供生图能力。"
+              : "用于角色形象、小说封面、漫画格子等图片生成；留空则这个厂商只用于文字任务。"}
             withDivider
           >
             {canSelectImageModels ? (
@@ -283,7 +299,9 @@ export default function ProviderConfigDialog({
               onChange={(event) => setForm((prev) => ({ ...prev, imageModel: event.target.value }))}
             />
             <div className="text-xs text-muted-foreground">
-              生图会调用这个厂商的 OpenAI 兼容图片生成接口。
+              {editingConfig?.provider === "grsai"
+                ? "GrsAI 生成图片需要排队，系统会自动等待结果。"
+                : "生图会调用这个厂商的图片生成接口。"}
             </div>
           </DialogSection>
 

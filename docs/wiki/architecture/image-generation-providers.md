@@ -23,16 +23,38 @@
 - 自定义或本地 OpenAI 兼容服务可以不填写 API Key；请求会省略 Authorization 头。
 - 角色形象图的前端选择列表必须来自当前设置数据，不能写死为 `openai`、`siliconflow`、`grok` 之类的固定列表。
 
+### 厂商能力标记（textCapable）
+
+- `PROVIDERS` 元数据支持 `textCapable?: boolean`，默认 `true`；`providerSupportsText(provider)` 是统一判断入口，自定义厂商恒为 `true`。
+- 只有图像接口、没有文本对话接口的聚合平台必须标记 `textCapable: false`（当前为 `grsai`）。这类厂商：
+  - 出现在「生图模型」分区的添加列表，配置 API Key + 生图模型后即视为已配置；不出现在「文本模型」分区、新手引导、知识库向量厂商列表、`/llm/providers` 文本模型下拉。
+  - 厂商配置弹窗隐藏文本模型区和测试连接按钮，保存时跳过 `/models` 列表刷新。
+  - 后端 `isConfigured` 对其按「Key + 生图模型」计算，而不是「Key + 文本模型」。
+
+### 非标准生图协议适配
+
+- 默认执行路径（`generateImagesByProvider`）仍是 OpenAI 兼容：JSON `/images/generations`，或带本地参考图时走 multipart `/images/edits`，响应解析 `{data:[{url|b64_json}]}`。
+- 非标准协议的内置厂商必须在 `server/src/services/image/providers/` 下新增独立适配器，并在 `provider.ts` 入口按 provider 分流；不要把第三方专有字段塞进通用请求体构造。
+- 火山方舟（`volcengine`）：OpenAI 兼容 `POST /api/v3/images/generations`；差异点是尺寸只接收 `1K/2K` 档位关键字、图生图通过 JSON `image` 字段（URL 或 data URL，单图 string / 多图 array），Seedream 4.0/4.5 仅输出 jpeg；Seedream 5.0 pro 不支持组图，多张需求按张并发请求。
+- GrsAI（`grsai`）：协议非 OpenAI。提交 `POST /v1/api/generate`（`replyType:"json"`，参考图放 `images` 数组，nano-banana 系列用宽高比、gpt-image 系列可直接给像素尺寸），响应 `{id,status,results}` 可能是 `running`，需轮询 `GET /v1/api/result?id=`，`violation` 按内容违规报错；单次只产一张，多张按张并发。默认根地址 `https://grsaiapi.com`（不带 `/v1`），适配器会容错去掉误填的 `/v1` 尾缀。
+- 本地参考图统一由 `providers/referenceImages.ts` 转 data URL（火山、GrsAI 均不使用 multipart），上限 10 张。
+
 ## Failure Modes
 
 - 如果设置页允许填写图像模型，但角色图生成页仍写死厂商，用户会误以为自定义厂商保存失败。
 - 如果后端只允许固定厂商进入图像生成，前端动态列表会把可选项交给用户，但任务提交后失败。
 - 如果删除自定义厂商时保留旧图像模型设置，后续重建同名厂商可能继承过期图片模型，造成难以解释的配置污染。
+- 纯生图厂商若漏标 `textCapable: false`，会同时出现在文本模型下拉、新手引导和 RAG 向量列表中，用户配置后所有文字任务都会调用失败。
+- GrsAI 是异步任务协议，若把首次返回的 `running` 当作成功，会得到空结果；必须轮询到 `succeeded` 再取 `results[].url`。
 
 ## Related Modules
 
 - `server/src/services/settings/ProviderImageSettingsService.ts`
-- `server/src/services/image/provider.ts`
+- `server/src/services/image/provider.ts`：执行入口与厂商分流
+- `server/src/services/image/providers/volcengineAdapter.ts`：火山方舟 Seedream 适配器
+- `server/src/services/image/providers/grsaiAdapter.ts`：GrsAI 异步生图与轮询适配器
+- `server/src/services/image/providers/referenceImages.ts`：本地参考图转 data URL
+- `server/src/llm/providers.ts`：内置厂商元数据与 `providerSupportsText`
 - `server/src/routes/settings.ts`
 - `server/src/routes/settings/customProviderRoutes.ts`
 - `client/src/pages/settings/components/providers/ProviderConfigDialog.tsx`：厂商配置弹窗（连接凭据 / 文本模型 / 生图模型 / 请求限制分区）

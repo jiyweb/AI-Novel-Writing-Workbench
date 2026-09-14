@@ -8,7 +8,7 @@ import { getStructuredFallbackSettings, saveStructuredFallbackSettings } from ".
 import { filterHiddenModels, getProviderModels, parseHiddenModels } from "../llm/modelCatalog";
 import { listModelRouteConfigs, MODEL_ROUTE_TASK_TYPES, upsertModelRouteConfig } from "../llm/modelRouter";
 import { llmProviderSchema } from "../llm/providerSchema";
-import { getProviderEnvApiKey, getProviderEnvModel, isBuiltInProvider, PROVIDERS } from "../llm/providers";
+import { getProviderEnvApiKey, getProviderEnvModel, isBuiltInProvider, providerSupportsText, PROVIDERS } from "../llm/providers";
 import { authMiddleware } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
@@ -41,23 +41,25 @@ router.get("/providers", async (_req, res, next) => {
     const keyMap = new Map(keys.map((item) => [item.provider, item]));
 
     const builtInEntries = await Promise.all(
-      Object.entries(PROVIDERS).map(async ([provider, config]) => {
-        const keyConfig = keyMap.get(provider);
-        const currentModel = keyConfig?.model?.trim()
-          || getProviderEnvModel(provider)
-          || config.defaultModel;
-        const models = filterHiddenModels(await getProviderModels(provider, {
-          apiKey: keyConfig?.key ?? getProviderEnvApiKey(provider),
-          baseURL: keyConfig?.baseURL ?? undefined,
-          fallbackModel: currentModel,
-          fallbackModels: [...config.models, currentModel],
-        }), parseHiddenModels(keyConfig?.hiddenModels), currentModel);
-        return [provider, {
-          name: config.name,
-          defaultModel: currentModel,
-          models,
-        }] as const;
-      }),
+      Object.entries(PROVIDERS)
+        .filter(([provider]) => providerSupportsText(provider))
+        .map(async ([provider, config]) => {
+          const keyConfig = keyMap.get(provider);
+          const currentModel = keyConfig?.model?.trim()
+            || getProviderEnvModel(provider)
+            || config.defaultModel;
+          const models = filterHiddenModels(await getProviderModels(provider, {
+            apiKey: keyConfig?.key ?? getProviderEnvApiKey(provider),
+            baseURL: keyConfig?.baseURL ?? undefined,
+            fallbackModel: currentModel,
+            fallbackModels: [...config.models, currentModel],
+          }), parseHiddenModels(keyConfig?.hiddenModels), currentModel);
+          return [provider, {
+            name: config.name,
+            defaultModel: currentModel,
+            models,
+          }] as const;
+        }),
     );
 
     const customEntries = await Promise.all(

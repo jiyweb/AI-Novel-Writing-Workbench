@@ -23,6 +23,8 @@ import type {
   ImageProviderGenerateResult,
   ImageQuality,
 } from "./types";
+import { generateWithGrsai } from "./providers/grsaiAdapter";
+import { generateWithVolcengine } from "./providers/volcengineAdapter";
 
 function normalizeBaseUrl(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -280,8 +282,19 @@ export async function generateImagesByProvider(input: ImageProviderGenerateInput
   }
 
   const { apiKey, baseURL } = await resolveProviderSecret(input.provider);
-  const controller = new AbortController();
   const timeoutMs = imageGenerationConfig.httpTimeoutMs;
+
+  // 火山方舟：OpenAI 兼容协议，但图生图走 JSON image 字段、尺寸用档位关键字，独立适配。
+  if (input.provider === "volcengine") {
+    return generateWithVolcengine(input, { apiKey, baseURL, timeoutMs });
+  }
+
+  // GrsAI：非标准协议（/v1/api/generate + 结果轮询），独立适配。
+  if (input.provider === "grsai") {
+    return generateWithGrsai(input, { apiKey, baseURL, timeoutMs });
+  }
+
+  const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(new Error(`Image generation request timed out after ${timeoutMs}ms.`)),
     timeoutMs,

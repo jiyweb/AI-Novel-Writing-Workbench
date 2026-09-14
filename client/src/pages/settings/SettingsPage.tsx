@@ -439,7 +439,7 @@ export default function SettingsPage() {
   const isSavingProvider = saveMutation.isPending || createCustomProviderMutation.isPending;
   const providerSubmitDisabled = isSavingProvider
     || previewCustomProviderModelsMutation.isPending
-    || (!isCreatingCustomProvider && !form.model.trim())
+    || (!isCreatingCustomProvider && editingConfig?.textCapable !== false && !form.model.trim())
     || (isCustomDialog && !form.displayName.trim())
     || (isCreatingCustomProvider && !form.baseURL.trim())
     || (!isCustomDialog && editingConfig?.requiresApiKey !== false && !form.key.trim() && !editingConfig?.isConfigured);

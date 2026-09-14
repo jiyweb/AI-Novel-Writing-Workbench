@@ -4,6 +4,7 @@ import {
   getProviderEnvApiKey,
   isBuiltInProvider,
   providerRequiresApiKey,
+  providerSupportsText,
   PROVIDERS,
   SUPPORTED_PROVIDERS,
 } from "../../llm/providers";
@@ -394,7 +395,8 @@ export async function saveRagEmbeddingSettings(input: RagEmbeddingSettingsInput)
 }
 
 export async function getRagEmbeddingProviders(): Promise<RagEmbeddingProviderStatus[]> {
-  const builtInProviders = [...SUPPORTED_PROVIDERS];
+  // grsai 等纯生图厂商不提供 embedding 接口，不出现在知识库向量厂商列表中。
+  const builtInProviders = SUPPORTED_PROVIDERS.filter((provider) => providerSupportsText(provider));
   try {
     const items = await prisma.aPIKey.findMany({
       select: {

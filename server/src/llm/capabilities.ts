@@ -161,6 +161,17 @@ export function getJsonCapability(provider: LLMProvider, model?: string, baseURL
       supportsJsonObject: false,
       supportsJsonSchema: false,
     },
+    volcengine: {
+      // 火山方舟豆包模型支持 response_format=json_object；
+      // json schema 支持随模型版本变化，这里保守关闭，结构化输出以 Zod 校验兜底。
+      supportsJsonObject: true,
+      supportsJsonSchema: false,
+    },
+    grsai: {
+      // grsai 仅提供图像接口，不会进入文本调用链。
+      supportsJsonObject: false,
+      supportsJsonSchema: false,
+    },
   };
 
   const cap = isBuiltinLLMProvider(provider) ? jsonCapabilities[provider] : undefined;

@@ -31,6 +31,8 @@ export interface APIKeyStatus {
   requiresApiKey: boolean;
   isConfigured: boolean;
   isActive: boolean;
+  /** false 表示该内置厂商只提供生图能力（如 GrsAI），不参与任何文本任务 */
+  textCapable: boolean;
   reasoningEnabled: boolean;
   reasoningEffort: ReasoningEffort | null;
   supportsReasoningEffort: boolean;
@@ -357,6 +359,7 @@ export async function saveAPIKeySetting(
       requestIntervalMs: number;
       models: string[];
       imageModels: string[];
+      textCapable?: boolean;
       supportsImageGeneration: boolean;
     }>
   >(`/settings/api-keys/${provider}`, payload);

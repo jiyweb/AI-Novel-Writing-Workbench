@@ -21,6 +21,7 @@ import {
   getProviderEnvModel,
   isBuiltInProvider,
   providerRequiresApiKey,
+  providerSupportsText,
   PROVIDERS,
   SUPPORTED_PROVIDERS,
 } from "../../../../llm/providers";
@@ -62,31 +63,33 @@ function buildCustomProviderId(name: string): LLMProvider {
 async function listProviderOptions(): Promise<QuickSetupProviderOption[]> {
   const records = await secretStore.listProviders();
   const recordByProvider = new Map(records.map((record) => [record.provider, record]));
-  const builtins: QuickSetupProviderOption[] = SUPPORTED_PROVIDERS.map((provider) => {
-    const config = PROVIDERS[provider];
-    const record = recordByProvider.get(provider);
-    const currentModel = normalizeOptionalText(record?.model)
-      ?? getProviderEnvModel(provider)
-      ?? config.defaultModel;
-    const currentBaseURL = normalizeOptionalText(record?.baseURL)
-      ?? getProviderEnvBaseUrl(provider)
-      ?? config.baseURL;
-    const hasRequiredKey = !providerRequiresApiKey(provider)
-      || Boolean(normalizeOptionalText(record?.key) ?? getProviderEnvApiKey(provider));
-    return {
-      id: provider,
-      kind: "builtin",
-      name: config.name,
-      requiresApiKey: providerRequiresApiKey(provider),
-      configured: (record?.isActive ?? true) && hasRequiredKey && Boolean(currentModel),
-      active: record?.isActive ?? true,
-      currentModel,
-      defaultModel: config.defaultModel,
-      currentBaseURL,
-      defaultBaseURL: config.baseURL,
-      models: Array.from(new Set([...(config.models ?? []), currentModel].filter(Boolean))),
-    };
-  });
+  const builtins: QuickSetupProviderOption[] = SUPPORTED_PROVIDERS
+    .filter((provider) => providerSupportsText(provider))
+    .map((provider) => {
+      const config = PROVIDERS[provider];
+      const record = recordByProvider.get(provider);
+      const currentModel = normalizeOptionalText(record?.model)
+        ?? getProviderEnvModel(provider)
+        ?? config.defaultModel;
+      const currentBaseURL = normalizeOptionalText(record?.baseURL)
+        ?? getProviderEnvBaseUrl(provider)
+        ?? config.baseURL;
+      const hasRequiredKey = !providerRequiresApiKey(provider)
+        || Boolean(normalizeOptionalText(record?.key) ?? getProviderEnvApiKey(provider));
+      return {
+        id: provider,
+        kind: "builtin",
+        name: config.name,
+        requiresApiKey: providerRequiresApiKey(provider),
+        configured: (record?.isActive ?? true) && hasRequiredKey && Boolean(currentModel),
+        active: record?.isActive ?? true,
+        currentModel,
+        defaultModel: config.defaultModel,
+        currentBaseURL,
+        defaultBaseURL: config.baseURL,
+        models: Array.from(new Set([...(config.models ?? []), currentModel].filter(Boolean))),
+      };
+    });
   const customs: QuickSetupProviderOption[] = records
     .filter((record) => !isBuiltInProvider(record.provider))
     .map((record) => {

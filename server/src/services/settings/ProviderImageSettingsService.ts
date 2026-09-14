@@ -1,7 +1,7 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { prisma } from "../../db/prisma";
 
-export type ImageModelProvider = "openai" | "siliconflow" | "grok";
+export type ImageModelProvider = "openai" | "siliconflow" | "grok" | "volcengine" | "grsai";
 
 const IMAGE_MODEL_SETTING_PREFIX = "provider.imageModel";
 
@@ -9,6 +9,18 @@ const IMAGE_MODEL_OPTIONS: Record<ImageModelProvider, string[]> = {
   openai: ["gpt-image-2"],
   siliconflow: ["black-forest-labs/FLUX.1-schnell"],
   grok: ["grok-imagine-image"],
+  volcengine: [
+    "doubao-seedream-5-0-pro-260628",
+    "doubao-seedream-5-0-260128",
+    "doubao-seedream-4-5-251128",
+    "doubao-seedream-4-0-250828",
+  ],
+  grsai: [
+    "gpt-image-2",
+    "gpt-image-2.5",
+    "nano-banana-2",
+    "nano-banana-pro",
+  ],
 };
 
 function isMissingTableError(error: unknown): boolean {
@@ -33,7 +45,11 @@ export function supportsImageModelSettings(provider: LLMProvider): boolean {
 }
 
 function isKnownImageModelProvider(provider: LLMProvider): provider is ImageModelProvider {
-  return provider === "openai" || provider === "siliconflow" || provider === "grok";
+  return provider === "openai"
+    || provider === "siliconflow"
+    || provider === "grok"
+    || provider === "volcengine"
+    || provider === "grsai";
 }
 
 export function getImageModelSettingKey(provider: LLMProvider): string | null {
@@ -62,6 +78,10 @@ export function getProviderEnvImageModel(provider: LLMProvider): string | undefi
       return normalizeOptionalText(process.env.SILICONFLOW_IMAGE_MODEL);
     case "grok":
       return normalizeOptionalText(process.env.XAI_IMAGE_MODEL);
+    case "volcengine":
+      return normalizeOptionalText(process.env.ARK_IMAGE_MODEL);
+    case "grsai":
+      return normalizeOptionalText(process.env.GRSAI_IMAGE_MODEL);
     default:
       return undefined;
   }

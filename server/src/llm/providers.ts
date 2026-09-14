@@ -15,6 +15,12 @@ export interface ProviderConfig {
   envModelKey?: string;
   maxTokens?: number;
   requiresApiKey?: boolean;
+  /**
+   * 是否提供文本对话能力。默认 true。
+   * 仅提供图像接口的聚合平台（如 grsai）标记为 false：
+   * 不出现在文本模型分区、新手引导、知识库向量等文本场景，只用于生图。
+   */
+  textCapable?: boolean;
 }
 
 export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
@@ -140,6 +146,28 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
     envModelKey: "OLLAMA_MODEL",
     requiresApiKey: false,
   },
+  volcengine: {
+    name: "火山方舟",
+    baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+    defaultModel: "doubao-seed-2-1-pro-260628",
+    models: [
+      "doubao-seed-2-1-pro-260628",
+      "doubao-seed-1-6-250615",
+      "doubao-seed-1-6-flash-250615",
+    ],
+    envKey: "ARK_API_KEY",
+    envBaseURLKey: "ARK_BASE_URL",
+    envModelKey: "ARK_MODEL",
+  },
+  grsai: {
+    name: "GrsAI 生图",
+    baseURL: "https://grsaiapi.com",
+    defaultModel: "",
+    models: [],
+    envKey: "GRSAI_API_KEY",
+    envBaseURLKey: "GRSAI_BASE_URL",
+    textCapable: false,
+  },
 };
 
 export const SUPPORTED_PROVIDERS: BuiltinLLMProvider[] = [...LLM_PROVIDERS];
@@ -217,4 +245,15 @@ export function providerRequiresApiKey(provider: LLMProvider): boolean {
     return false;
   }
   return PROVIDERS[provider].requiresApiKey !== false;
+}
+
+/**
+ * 内置厂商是否提供文本对话能力。
+ * 自定义厂商默认具备文本能力；内置厂商按 PROVIDERS 元数据判断（grsai 仅生图）。
+ */
+export function providerSupportsText(provider: LLMProvider): boolean {
+  if (!isBuiltInProvider(provider)) {
+    return true;
+  }
+  return PROVIDERS[provider].textCapable !== false;
 }
