@@ -13,6 +13,7 @@ import sharp from "sharp";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
 import { resolveGeneratedImagesRoot } from "../../runtime/appPaths";
+import { comicExportJobDir } from "./storage/comicStoragePaths";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,12 +44,6 @@ export interface ExportJobResult {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const EXPORT_DIR = "comic-exports";
-
-function exportJobDir(jobId: string): string {
-  return path.join(resolveGeneratedImagesRoot(), EXPORT_DIR, jobId);
-}
 
 function exportArtifactUrl(jobId: string, filename: string): string {
   return `/api/comic/export-jobs/${jobId}/artifacts/${filename}`;
@@ -104,7 +99,7 @@ export class ComicExportService {
       },
     });
 
-    const jobDir = exportJobDir(job.id);
+    const jobDir = comicExportJobDir(job.id);
     await fs.mkdir(jobDir, { recursive: true });
 
     try {
@@ -213,7 +208,7 @@ export class ComicExportService {
   /** 读取导出产物文件供 HTTP 流式响应 */
   async getArtifactFile(jobId: string, filename: string): Promise<{ buffer: Buffer; ext: string } | null> {
     const safeFilename = path.basename(filename); // 防目录穿越
-    const filePath = path.join(exportJobDir(jobId), safeFilename);
+    const filePath = path.join(comicExportJobDir(jobId), safeFilename);
     try {
       const buffer = await fs.readFile(filePath);
       const ext = path.extname(safeFilename).replace(".", "").toLowerCase();

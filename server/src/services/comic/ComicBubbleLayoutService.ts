@@ -12,7 +12,7 @@ import path from "path";
 import sharp from "sharp";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
-import { resolveGeneratedImagesRoot } from "../../runtime/appPaths";
+import { comicLetteredPanelDir, comicPanelDir } from "./storage/comicStoragePaths";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,7 +45,6 @@ export interface LetterPanelResult {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const COMIC_LETTERED_DIR = "comic-panels-lettered";
 const CJK_FONT_STACK = `"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans CN", sans-serif`;
 const DEFAULT_FONT_SIZE = 24;
 const BUBBLE_PADDING = 16;
@@ -189,16 +188,12 @@ function escapeXml(s: string): string {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function letteredPanelDir(panelId: string): string {
-  return path.join(resolveGeneratedImagesRoot(), COMIC_LETTERED_DIR, panelId);
-}
-
 function letteredPanelUrl(panelId: string): string {
   return `/api/comic/panel-images/${panelId}/lettered`;
 }
 
 async function findPanelImageBuffer(panelId: string): Promise<Buffer> {
-  const rawDir = path.join(resolveGeneratedImagesRoot(), "comic-panels", panelId);
+  const rawDir = comicPanelDir(panelId);
   let entries: string[];
   try { entries = await fs.readdir(rawDir); } catch { throw new AppError("格子图尚未生成，请先生成图像。", 400); }
   const file = entries.find((f) => /^panel\.(png|jpg|webp)$/i.test(f));
@@ -264,7 +259,7 @@ export class ComicBubbleLayoutService {
     }
 
     const outBuffer = await composited.png().toBuffer();
-    const outDir = letteredPanelDir(panelId);
+    const outDir = comicLetteredPanelDir(panelId);
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, "lettered.png"), outBuffer);
 
@@ -283,7 +278,7 @@ export class ComicBubbleLayoutService {
 
   /** 读取已排版图文件（供 HTTP 路由流式响应） */
   async getLetteredImageFile(panelId: string): Promise<Buffer | null> {
-    const filePath = path.join(letteredPanelDir(panelId), "lettered.png");
+    const filePath = path.join(comicLetteredPanelDir(panelId), "lettered.png");
     try {
       return await fs.readFile(filePath);
     } catch {

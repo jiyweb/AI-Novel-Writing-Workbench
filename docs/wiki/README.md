@@ -30,6 +30,7 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 - [通用角色主体与跨来源角色对话](./workflows/universal-character-conversation.md)
 - [拆书工作流](./workflows/book-analysis-workflow.md)
 - [图片生成确认与统一运行时](./workflows/image-generation-confirmation-runtime.md)
+- [漫画项目删除与图片存储清理](./workflows/comic-project-deletion-storage.md)
 - [Creative Hub 边界](./workflows/creative-hub-boundary.md)
 
 ### Prompts

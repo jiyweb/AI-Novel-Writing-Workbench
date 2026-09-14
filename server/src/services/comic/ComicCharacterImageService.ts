@@ -13,7 +13,7 @@ import sharp from "sharp";
 
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
-import { resolveGeneratedImagesRoot } from "../../runtime/appPaths";
+import { comicCharacterDir } from "./storage/comicStoragePaths";
 import {
   filterImageGenerationReferences,
   runImageGeneration,
@@ -72,7 +72,6 @@ export interface CharacterExpressionData {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const COMIC_CHARS_DIR = "comic-characters";
 const DEFAULT_PROVIDER: LLMProvider = "openai";
 const IMAGE_EXTS: Array<[string, string]> = [
   ["png", "image/png"],
@@ -88,10 +87,6 @@ const EXPRESSION_LABELS: Record<CharacterExpressionId, string> = {
   surprised: "惊讶",
   cold: "冷漠",
 };
-
-function comicCharacterDir(charId: string): string {
-  return path.join(resolveGeneratedImagesRoot(), COMIC_CHARS_DIR, charId);
-}
 
 function sheetUrl(charId: string): string {
   return `/api/comic/character-images/${charId}/sheet`;

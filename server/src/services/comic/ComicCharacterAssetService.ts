@@ -12,7 +12,7 @@ import path from "path";
 
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
-import { resolveGeneratedImagesRoot } from "../../runtime/appPaths";
+import { comicCharacterAssetDir as assetDir, comicCharacterDir } from "./storage/comicStoragePaths";
 import { filterImageGenerationReferences, runImageGeneration, safeJsonParse } from "../image/runtime";
 import { buildGenderLockPrompt, resolveComicStyleKeywords } from "./comicStylePrompt";
 
@@ -49,16 +49,11 @@ export interface UpdateAssetInput {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const ASSETS_DIR = "comic-character-assets";
 const IMAGE_EXTS: Array<[string, string]> = [
   ["png", "image/png"],
   ["jpg", "image/jpeg"],
   ["webp", "image/webp"],
 ];
-
-function assetDir(assetId: string): string {
-  return path.join(resolveGeneratedImagesRoot(), ASSETS_DIR, assetId);
-}
 
 export function assetImageUrl(assetId: string): string {
   return `/api/comic/character-assets/${assetId}/image`;
@@ -88,7 +83,7 @@ async function resolveSheetRefPaths(characterId: string): Promise<string[]> {
   if (sheet.status !== "done") return [];
 
   // 复用 ComicCharacterImageService 的存储规范
-  const sheetsRoot = path.join(resolveGeneratedImagesRoot(), "comic-characters", characterId);
+  const sheetsRoot = comicCharacterDir(characterId);
   const IMAGE_EXTS_LOCAL: Array<[string]> = [["png"], ["jpg"], ["webp"]];
   for (const [ext] of IMAGE_EXTS_LOCAL) {
     const candidate = path.join(sheetsRoot, `character-sheet.${ext}`);

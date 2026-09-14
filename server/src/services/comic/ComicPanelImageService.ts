@@ -3,7 +3,7 @@ import path from "path";
 
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
-import { resolveGeneratedImagesRoot } from "../../runtime/appPaths";
+import { comicPanelDir } from "./storage/comicStoragePaths";
 import {
   filterImageGenerationReferences,
   runImageGeneration,
@@ -50,12 +50,7 @@ export interface PanelImageData {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const COMIC_IMAGES_DIR = "comic-panels";
 const DEFAULT_PROVIDER: LLMProvider = "openai";
-
-function comicPanelDir(panelId: string): string {
-  return path.join(resolveGeneratedImagesRoot(), COMIC_IMAGES_DIR, panelId);
-}
 
 function panelImageUrl(panelId: string): string {
   return `/api/comic/panel-images/${panelId}/panel`;

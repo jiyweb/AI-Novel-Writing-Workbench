@@ -12,7 +12,7 @@ import path from "path";
 
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
-import { resolveGeneratedImagesRoot } from "../../runtime/appPaths";
+import { comicSceneDir as sceneDir } from "./storage/comicStoragePaths";
 import { runImageGeneration, safeJsonParse, type ImageTargetAdapter } from "../image/runtime";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { resolveComicStyleKeywords } from "./comicStylePrompt";
@@ -57,17 +57,12 @@ export interface UpdateSceneInput {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SCENES_DIR = "comic-scenes";
 const DEFAULT_PROVIDER: LLMProvider = "openai";
 const IMAGE_EXTS: Array<[string, string]> = [
   ["png", "image/png"],
   ["jpg", "image/jpeg"],
   ["webp", "image/webp"],
 ];
-
-function sceneDir(sceneId: string): string {
-  return path.join(resolveGeneratedImagesRoot(), SCENES_DIR, sceneId);
-}
 
 export function sceneImageUrl(sceneId: string): string {
   return `/api/comic/scenes/${sceneId}/image`;

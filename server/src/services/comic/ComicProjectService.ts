@@ -11,6 +11,7 @@ import { novelSourceAdapter } from "../adaptation/source/NovelSourceAdapter";
 import type { AdaptationSourceType, SourceBundle, SourceRef } from "../adaptation/contracts/sourceBundle";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { comicVisualAnchorRewritePrompt, type ComicVisualAnchorRewriteOutput } from "../../prompting/prompts/comic/comic.prompts";
+import { removeComicProjectStorage } from "./storage/projectStorageCleanup";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 
 adaptationSourceRegistry.register(novelSourceAdapter);
@@ -105,8 +106,47 @@ export class ComicProjectService {
     });
   }
 
+  /**
+   * 删除漫画项目。
+   * - DB：所有关联表在 schema 中配置了 ON DELETE CASCADE，prisma.delete 会级联清除；
+   * - 磁盘：删除前收集全部实体 id，删除后尽力清理 generated-images 下的图片与导出目录，
+   *   文件清理失败只记录 warning，不回滚删除，保证列表状态与数据库一致。
+   */
   async deleteProject(projectId: string) {
-    return prisma.comicProject.delete({ where: { id: projectId } });
+    const project = await prisma.comicProject.findUnique({
+      where: { id: projectId },
+      select: {
+        characters: { select: { id: true } },
+        characterAssets: { select: { id: true } },
+        scenes: { select: { id: true } },
+        episodes: { select: { panels: { select: { id: true } } } },
+        exportJobs: { select: { id: true } },
+        uploadAssets: { select: { filePath: true } },
+      },
+    });
+    if (!project) {
+      return null;
+    }
+
+    const deleted = await prisma.comicProject.delete({ where: { id: projectId } });
+
+    const panelIds = project.episodes.flatMap((episode) => episode.panels.map((panel) => panel.id));
+    const cleanupFailures = await removeComicProjectStorage({
+      characterIds: project.characters.map((character) => character.id),
+      characterAssetIds: project.characterAssets.map((asset) => asset.id),
+      sceneIds: project.scenes.map((scene) => scene.id),
+      panelIds,
+      exportJobIds: project.exportJobs.map((job) => job.id),
+      uploadFilePaths: project.uploadAssets.map((asset) => asset.filePath),
+    });
+    if (cleanupFailures.length > 0) {
+      console.warn(
+        `[comic] project ${projectId} deleted with ${cleanupFailures.length} storage cleanup failure(s):\n`
+        + cleanupFailures.map((item) => `  - ${item}`).join("\n"),
+      );
+    }
+
+    return deleted;
   }
 
   /**
