@@ -329,11 +329,13 @@ export async function deleteScene(id: string, projectId: string): Promise<void> 
 
 export async function saveImageBlob(
   record: Omit<ComicImageRecord, "id" | "createdAt">,
-  blob: Blob,
+  blob: Blob | null,
 ): Promise<ComicImageRecord> {
   const now = new Date().toISOString();
   const fullRecord: ComicImageRecord = { ...record, id: generateId("img"), createdAt: now };
-  await set(ComicDbKeys.image(fullRecord.id), blob);
+  if (blob) {
+    await set(ComicDbKeys.image(fullRecord.id), blob);
+  }
   await set(ComicDbKeys.imageRecord(fullRecord.id), fullRecord);
   const ids =
     (await get<string[]>(ComicDbKeys.imageRecordIndexOfProject(record.projectId))) ?? [];

@@ -6,12 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getChapter,
   getProject,
+  getSettings,
   listChapters,
   listPanels,
   listProjects,
 } from "../db/comicDb";
 import { getAiSettings } from "../services/ai/aiConfigService";
-import type { AiConnectionSettings } from "../types";
+import type { AiConnectionSettings, WorkbenchSettings } from "../types";
 
 export const comicKeys = {
   projects: ["comic-workbench", "projects"] as const,
@@ -20,6 +21,7 @@ export const comicKeys = {
   chapter: (chapterId: string) => ["comic-workbench", "chapter", chapterId] as const,
   panels: (chapterId: string) => ["comic-workbench", "panels", chapterId] as const,
   aiSettings: ["comic-workbench", "aiSettings"] as const,
+  settings: ["comic-workbench", "settings"] as const,
 };
 
 export function useComicProjects() {
@@ -65,4 +67,12 @@ export function useAiSettings() {
   });
 }
 
-export type { AiConnectionSettings };
+/** 全局设置（AI 配置 / 个人画风预设 / 最近打开记录） */
+export function useWorkbenchSettings() {
+  return useQuery({
+    queryKey: comicKeys.settings,
+    queryFn: getSettings,
+  });
+}
+
+export type { AiConnectionSettings, WorkbenchSettings };

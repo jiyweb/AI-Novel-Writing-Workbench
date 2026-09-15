@@ -174,6 +174,10 @@ export interface PromptFormulaConfig {
   letteringHints: Record<ComicLetteringMode, string>;
   /** 画质词（按生成模式） */
   qualityWords: Record<GenerationMode, string>;
+  /** 线条粗细的中文展示词（UI 与描述词共用） */
+  lineWeightLabels: Record<StyleAdjustments["lineWeight"], string>;
+  /** 光影强度的中文展示词 */
+  lightingLabels: Record<StyleAdjustments["lighting"], string>;
   /** 全局负面词 */
   negativeWords: string;
 }
@@ -501,6 +505,8 @@ export interface ComicImageRecord {
   kind: ComicImageKind;
   mime: string;
   byteSize: number;
+  /** 远程图片地址：生成服务返回 URL 且跨域读取失败时记录，用于直接展示（可能随平台过期） */
+  remoteUrl?: string;
   createdAt: string;
 }
 

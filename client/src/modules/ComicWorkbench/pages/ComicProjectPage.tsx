@@ -13,6 +13,7 @@ import { getFormById, getStylePresetById } from "../services/configService";
 import { getProject } from "../db/comicDb";
 import { WORKBENCH_STEPS, useComicWorkbenchStore } from "../stores/workbenchStore";
 import { ImportStepPanel } from "../components/steps/ImportStepPanel";
+import { FormStyleStepPanel } from "../components/steps/FormStyleStepPanel";
 import type { WorkbenchStep } from "../stores/workbenchStore";
 
 export default function ComicProjectPage() {
@@ -94,6 +95,8 @@ function StepBody(props: { step: WorkbenchStep; projectId: string }) {
   switch (props.step) {
     case "import":
       return <ImportStepPanel projectId={props.projectId} />;
+    case "formStyle":
+      return <FormStyleStepPanel projectId={props.projectId} />;
     default:
       return (
         <div className="rounded-xl bg-muted/30 px-6 py-16 text-center text-sm text-muted-foreground">
