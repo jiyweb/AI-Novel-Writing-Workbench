@@ -14,6 +14,7 @@ import { getProject } from "../db/comicDb";
 import { WORKBENCH_STEPS, useComicWorkbenchStore } from "../stores/workbenchStore";
 import { ImportStepPanel } from "../components/steps/ImportStepPanel";
 import { FormStyleStepPanel } from "../components/steps/FormStyleStepPanel";
+import { StoryboardStepPanel } from "../components/steps/StoryboardStepPanel";
 import type { WorkbenchStep } from "../stores/workbenchStore";
 
 export default function ComicProjectPage() {
@@ -97,6 +98,8 @@ function StepBody(props: { step: WorkbenchStep; projectId: string }) {
       return <ImportStepPanel projectId={props.projectId} />;
     case "formStyle":
       return <FormStyleStepPanel projectId={props.projectId} />;
+    case "storyboard":
+      return <StoryboardStepPanel projectId={props.projectId} />;
     default:
       return (
         <div className="rounded-xl bg-muted/30 px-6 py-16 text-center text-sm text-muted-foreground">
