@@ -1,0 +1,33 @@
+{
+  "$comment": "分镜密度与切分规则配置：5档密度的句数区间、切分阈值、场景切换词表全部可改，无需改动业务代码。",
+  "defaultDensity": "standard",
+  "levels": [
+    { "id": "ultraTight", "name": "极紧", "minSentences": 1, "maxSentences": 2, "description": "每1-2句一镜，逐句运镜，节奏最快" },
+    { "id": "tight", "name": "紧凑", "minSentences": 2, "maxSentences": 3, "description": "每2-3句一镜，动作连贯" },
+    { "id": "standard", "name": "标准", "minSentences": 3, "maxSentences": 5, "description": "每3-5句一镜，均衡叙事" },
+    { "id": "loose", "name": "宽松", "minSentences": 5, "maxSentences": 8, "description": "每5-8句一镜，段落式概括" },
+    { "id": "ultraLoose", "name": "极松", "minSentences": 8, "maxSentences": 12, "description": "每8-12句一镜，高度概括" }
+  ],
+  "splitRules": {
+    "sentenceEndChars": "。！？…!?；;",
+    "clauseBreakChars": "，,、：:",
+    "maxPanelChars": 120,
+    "minPanelChars": 12,
+    "sceneChangeForceSplit": true,
+    "sceneChangeMarkers": [
+      "此时", "忽然", "突然", "转眼", "与此同时", "第二天", "当夜", "深夜", "清晨", "傍晚",
+      "回到", "来到", "走进", "推门", "镜头切换", "画面一转", "半小时后", "片刻之后", "次日"
+    ],
+    "dialogueSeparateFromNarration": true,
+    "dialogueOpenChars": "“\"『「‘",
+    "dialogueCloseChars": "”\"』」’"
+  },
+  "dynamicDensity": {
+    "enabled": true,
+    "climaxKeywords": [
+      "爆发", "怒吼", "惨叫", "心跳", "血流", "倒吸", "惊", "炸", "撕", "砸", "冲",
+      "耳光", "下跪", "婚礼", "死亡", "真相", "反转", "打脸", "告白", "崩溃", "逆袭"
+    ],
+    "dialogueBoost": true
+  }
+}

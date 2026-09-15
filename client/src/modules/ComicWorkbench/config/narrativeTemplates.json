@@ -1,0 +1,49 @@
+{
+  "$comment": "爆款连续漫画增强配置：叙事模板注入灵感扩写与分镜节奏引导；平台适配自动推荐形态并约束运营文案风格。",
+  "templates": [
+    {
+      "id": "shuangwenSlapFace",
+      "name": "爽文打脸",
+      "description": "被轻视→隐忍蓄力→当众反转打脸，多巴胺节奏拉满",
+      "promptDirective": "采用爽文打脸叙事节奏：前段铺垫轻视与压抑，中段蓄力反转，结尾当众打脸并给出强烈情绪对比，关键反转处放慢节奏给足特写。"
+    },
+    {
+      "id": "sweetInteraction",
+      "name": "甜宠互动",
+      "description": "心动瞬间、暧昧拉扯、糖点密集的甜蜜互动",
+      "promptDirective": "采用甜宠互动叙事节奏：糖点密集，大量眼神与肢体微互动特写，氛围柔光，结尾留一个心动的回味点。"
+    },
+    {
+      "id": "suspenseTwist",
+      "name": "悬疑反转",
+      "description": "悬念铺垫、细节伏笔、结尾惊人反转",
+      "promptDirective": "采用悬疑反转叙事：前段埋设至少两处视觉伏笔，中段悬念递进，结尾反转要与前文伏笔呼应，反转格使用强对比构图。"
+    },
+    {
+      "id": "emotionResonance",
+      "name": "情绪共鸣",
+      "description": "戳中普遍情绪的共情叙事，适合转发传播",
+      "promptDirective": "采用情绪共鸣叙事：选取一个普遍情绪痛点，用生活化细节铺垫，情绪高点用连续短镜放大，结尾给出释怀或共鸣点题。"
+    }
+  ],
+  "platforms": [
+    {
+      "id": "douyin",
+      "name": "抖音",
+      "recommendedFormId": "shortDrama",
+      "pacingHint": "节奏极快，前3镜必须抛出冲突钩子，情绪直给，结尾留悬念引导追更"
+    },
+    {
+      "id": "xhs",
+      "name": "小红书",
+      "recommendedFormId": "strip",
+      "pacingHint": "节奏轻快，画面精致有氛围感，标题情绪化，适合甜宠与共鸣题材"
+    },
+    {
+      "id": "weibo",
+      "name": "微博",
+      "recommendedFormId": "fourPanel",
+      "pacingHint": "节奏紧凑带梗，四格或短条漫便于转发，结尾可带互动话题"
+    }
+  ]
+}

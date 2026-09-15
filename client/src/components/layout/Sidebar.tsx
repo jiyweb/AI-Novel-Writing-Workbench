@@ -15,11 +15,11 @@ import {
   // 短剧工作台暂时隐藏入口（/drama 路由与页面代码保留），恢复时连同下方导航项一起放开
   // MonitorPlay,
   Radar,
-  SquareStack,
   ScanSearch,
   Settings2,
   ShieldCheck,
   SquarePen,
+  SquareStack,
   Tags,
   UsersRound,
   WandSparkles,
@@ -57,9 +57,10 @@ const navGroups: NavGroup[] = [
       { to: "/help", label: "创作向导", icon: CircleHelp },
       { to: "/market-radar", label: "热门题材雷达", icon: Radar },
       { to: "/novels", label: "小说列表", icon: BookOpenText },
+      // 漫画工作台：独立模块（client/src/modules/ComicWorkbench/），仅此处挂载入口
+      { to: "/comic", label: "漫画工作台", icon: SquareStack },
       // 短剧工作台暂时隐藏入口（/drama 路由与页面代码保留），恢复时把图标 import 一并放开
       // { to: "/drama", label: "短剧工作台", icon: MonitorPlay, disabled: true },
-      { to: "/comic", label: "漫画工作台", icon: SquareStack },
       { to: "/creative-hub", label: "创作中枢", icon: LayoutDashboard },
       { to: "/book-analysis", label: "拆书", icon: ScanSearch },
     ],
@@ -137,21 +138,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const failedIndexCount = knowledgeDocuments.filter((item) => item.latestIndexStatus === "failed").length;
 
   const renderBadge = (to: string) => {
-    if (to === "/comic") {
-      if (collapsed) {
-        return null;
-      }
-      return (
-        <Badge
-          variant="outline"
-          className="ml-auto h-5 border-amber-300 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700"
-          title="漫画工作台仍在 Beta 阶段"
-        >
-          Beta
-        </Badge>
-      );
-    }
-
     if (to === "/tasks") {
       if (failedTaskCount <= 0) {
         return null;
@@ -257,7 +243,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 return (
                   <div
                     key={item.to}
-                    title={collapsed ? item.label : "即将推出"}
+                    title={collapsed ? item.label : "待开发"}
                     className={cn(
                       "relative flex cursor-not-allowed items-center rounded-md text-sm opacity-40",
                       collapsed ? "justify-center px-2 py-2.5" : "py-2 pl-4 pr-2",
@@ -268,7 +254,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       <span className="truncate">{item.label}</span>
                     ) : null}
                     {!collapsed ? (
-                      <span className="ml-auto text-[10px] text-muted-foreground/60">即将推出</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground/60">待开发</span>
                     ) : null}
                   </div>
                 );

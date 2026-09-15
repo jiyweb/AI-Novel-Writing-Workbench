@@ -1,0 +1,103 @@
+{
+  "$comment": "漫画形态配置：修改本文件即可调整形态规则，无需改动业务代码。panelGrid 为每图格数规则；promptPrefix 会作为描述词的形态段注入。",
+  "forms": [
+    {
+      "id": "strip",
+      "name": "条漫",
+      "aspectRatio": "3:4",
+      "ratioWidth": 3,
+      "ratioHeight": 4,
+      "referencePixel": { "width": 1024, "height": 1365 },
+      "draftPixel": { "width": 512, "height": 683 },
+      "panelGrid": { "minPerImage": 1, "maxPerImage": 6, "defaultPerImage": 3 },
+      "letteringMode": "bubble",
+      "promptPrefix": "竖屏条漫分镜，从上到下的阅读顺序，画面间留白分隔，韩系条漫排版",
+      "description": "适合手机端连续阅读的竖排分镜长图",
+      "preview": { "layout": "vertical", "blockCount": 3, "accentColor": "#6366f1" }
+    },
+    {
+      "id": "chat",
+      "name": "聊天漫",
+      "aspectRatio": "9:16",
+      "ratioWidth": 9,
+      "ratioHeight": 16,
+      "referencePixel": { "width": 1080, "height": 1920 },
+      "draftPixel": { "width": 540, "height": 960 },
+      "panelGrid": { "minPerImage": 1, "maxPerImage": 2, "defaultPerImage": 1 },
+      "letteringMode": "chat",
+      "promptPrefix": "手机聊天界面漫画，左右对话气泡布局，界面风格简洁，头像与昵称清晰",
+      "description": "模拟手机聊天记录的对话式漫画",
+      "preview": { "layout": "chat", "blockCount": 4, "accentColor": "#22c55e" }
+    },
+    {
+      "id": "fourPanel",
+      "name": "四格漫",
+      "aspectRatio": "1:1",
+      "ratioWidth": 1,
+      "ratioHeight": 1,
+      "referencePixel": { "width": 1024, "height": 1024 },
+      "draftPixel": { "width": 512, "height": 512 },
+      "panelGrid": { "minPerImage": 4, "maxPerImage": 4, "defaultPerImage": 4 },
+      "letteringMode": "bubble",
+      "promptPrefix": "经典四格漫画版式，2x2 等分画面，起承转合节奏，格间白色分隔线",
+      "description": "起承转合四格结构，节奏轻快",
+      "preview": { "layout": "grid", "blockCount": 4, "accentColor": "#f59e0b" }
+    },
+    {
+      "id": "singlePage",
+      "name": "传统单页漫",
+      "aspectRatio": "3:4",
+      "ratioWidth": 3,
+      "ratioHeight": 4,
+      "referencePixel": { "width": 1024, "height": 1365 },
+      "draftPixel": { "width": 512, "height": 683 },
+      "panelGrid": { "minPerImage": 3, "maxPerImage": 8, "defaultPerImage": 5 },
+      "letteringMode": "bubble",
+      "promptPrefix": "日式漫画单页排版，多格布局错落有致，阅读顺序从右到左从上到下，格线清晰",
+      "description": "杂志连载式多格单页，信息密度高",
+      "preview": { "layout": "grid", "blockCount": 6, "accentColor": "#3b82f6" }
+    },
+    {
+      "id": "cinematic",
+      "name": "电影分镜",
+      "aspectRatio": "16:9",
+      "ratioWidth": 16,
+      "ratioHeight": 9,
+      "referencePixel": { "width": 1280, "height": 720 },
+      "draftPixel": { "width": 640, "height": 360 },
+      "panelGrid": { "minPerImage": 1, "maxPerImage": 3, "defaultPerImage": 1 },
+      "letteringMode": "caption",
+      "promptPrefix": "电影感分镜画面，宽银幕构图，电影级光影与景深，故事板质感",
+      "description": "宽银幕电影语言，底部字幕呈现",
+      "preview": { "layout": "single", "blockCount": 1, "accentColor": "#0ea5e9" }
+    },
+    {
+      "id": "shortDrama",
+      "name": "短剧截图漫",
+      "aspectRatio": "9:16",
+      "ratioWidth": 9,
+      "ratioHeight": 16,
+      "referencePixel": { "width": 1080, "height": 1920 },
+      "draftPixel": { "width": 540, "height": 960 },
+      "panelGrid": { "minPerImage": 1, "maxPerImage": 3, "defaultPerImage": 1 },
+      "letteringMode": "caption",
+      "promptPrefix": "竖屏短剧剧照风格，真人质感，影视打光，底部大字幕，情绪张力强",
+      "description": "仿短剧截图的竖屏叙事，底部字幕",
+      "preview": { "layout": "single", "blockCount": 1, "accentColor": "#ec4899" }
+    },
+    {
+      "id": "inkWash",
+      "name": "水墨国风漫",
+      "aspectRatio": "3:4",
+      "ratioWidth": 3,
+      "ratioHeight": 4,
+      "referencePixel": { "width": 1024, "height": 1365 },
+      "draftPixel": { "width": 512, "height": 683 },
+      "panelGrid": { "minPerImage": 1, "maxPerImage": 4, "defaultPerImage": 2 },
+      "letteringMode": "bubble",
+      "promptPrefix": "中国水墨画风漫画，留白构图，墨色浓淡层次，宣纸质感，古风意境",
+      "description": "留白意境与墨色层次，古风叙事",
+      "preview": { "layout": "vertical", "blockCount": 2, "accentColor": "#64748b" }
+    }
+  ]
+}

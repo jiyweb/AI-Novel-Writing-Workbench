@@ -1,0 +1,65 @@
+{
+  "$comment": "画风预设配置：修改本文件即可调整画风，无需改动业务代码。promptKeywords 会作为描述词的画风段注入；adjustments 为 UI 可调参数的默认值。",
+  "presets": [
+    {
+      "id": "shonen",
+      "name": "少年漫",
+      "promptKeywords": "日系少年漫画风格，动感速度线，强烈黑白对比，热血张力，锐利笔触",
+      "adjustments": { "colorTone": "高饱和热血色调", "lineWeight": "bold", "quality": "fine", "lighting": "strong" }
+    },
+    {
+      "id": "shoujo",
+      "name": "少女漫",
+      "promptKeywords": "日系少女漫画风格，柔和粉色系，闪光花瓣点缀，细腻网点，大眼睛美型人物",
+      "adjustments": { "colorTone": "柔和粉彩色调", "lineWeight": "thin", "quality": "fine", "lighting": "soft" }
+    },
+    {
+      "id": "moe",
+      "name": "萌系漫",
+      "promptKeywords": "日系萌系插画风格，圆润可爱造型，明亮清新配色，软萌表情，柔和渐变上色",
+      "adjustments": { "colorTone": "明亮马卡龙色", "lineWeight": "normal", "quality": "fine", "lighting": "soft" }
+    },
+    {
+      "id": "chibi",
+      "name": "Q版萌漫",
+      "promptKeywords": "Q版二头身漫画风格，大头小身体，夸张搞笑表情，简洁明快配色",
+      "adjustments": { "colorTone": "明快撞色", "lineWeight": "bold", "quality": "standard", "lighting": "balanced" }
+    },
+    {
+      "id": "inkWash",
+      "name": "水墨国风",
+      "promptKeywords": "中国传统水墨画风，墨色浓淡干湿，留白意境，毛笔笔触，宣纸底纹",
+      "adjustments": { "colorTone": "黑白墨色淡彩", "lineWeight": "normal", "quality": "fine", "lighting": "soft" }
+    },
+    {
+      "id": "colorInk",
+      "name": "彩漫国风",
+      "promptKeywords": "中国风彩色漫画，工笔重彩与传统元素结合，敦煌配色，祥云纹样点缀，古风人物",
+      "adjustments": { "colorTone": "古风重彩", "lineWeight": "normal", "quality": "ultra", "lighting": "balanced" }
+    },
+    {
+      "id": "shortDramaShot",
+      "name": "短剧截图",
+      "promptKeywords": "真人短剧剧照风格，写实人物，影视级打光，浅景深，情绪特写，手机竖屏观感",
+      "adjustments": { "colorTone": "自然写实色", "lineWeight": "normal", "quality": "ultra", "lighting": "strong" }
+    },
+    {
+      "id": "cinematic",
+      "name": "电影质感",
+      "promptKeywords": "电影剧照质感，宽银幕构图，体积光，胶片颗粒，专业调色，戏剧性光影",
+      "adjustments": { "colorTone": "电影级调色", "lineWeight": "normal", "quality": "ultra", "lighting": "strong" }
+    },
+    {
+      "id": "cyberpunk",
+      "name": "赛博朋克",
+      "promptKeywords": "赛博朋克风格，霓虹灯光，雨夜都市，全息投影，高对比紫青配色，未来感UI",
+      "adjustments": { "colorTone": "霓虹紫青", "lineWeight": "normal", "quality": "ultra", "lighting": "strong" }
+    },
+    {
+      "id": "watercolor",
+      "name": "水彩手绘",
+      "promptKeywords": "水彩手绘风格，透明叠色，纸纹肌理，晕染边缘，温柔光线，绘本感",
+      "adjustments": { "colorTone": "清新水彩色", "lineWeight": "thin", "quality": "fine", "lighting": "soft" }
+    }
+  ]
+}

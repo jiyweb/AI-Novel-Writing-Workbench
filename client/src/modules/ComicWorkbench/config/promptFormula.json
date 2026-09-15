@@ -1,0 +1,45 @@
+{
+  "$comment": "描述词公式配置：segmentOrder 控制拼接顺序，segmentTemplates 中 {placeholder} 会被运行时替换。可用占位符见模块 README。",
+  "segmentOrder": ["form", "style", "scene", "characters", "action", "camera", "lettering", "quality"],
+  "segmentJoiner": "，",
+  "segmentTemplates": {
+    "form": "{formPromptPrefix}",
+    "style": "{styleKeywords}，色调：{colorTone}，线条：{lineWeight}，光影：{lighting}{customKeywords}",
+    "scene": "场景：{sceneName}，{sceneSpace}{sceneEnvironment}，时间：{sceneTime}，天气：{sceneWeather}，光线：{sceneLighting}",
+    "characters": "{charactersText}",
+    "action": "剧情：{actionSummary}",
+    "camera": "{cameraDirective}",
+    "lettering": "{letteringHint}",
+    "quality": "{qualityWords}"
+  },
+  "cameraDirectives": {
+    "wide": "远景镜头，交代环境与人物位置关系",
+    "medium": "中景镜头，人物半身，动作与互动为主",
+    "closeUp": "近景镜头，胸部以上，突出表情",
+    "extremeCloseUp": "特写镜头，面部或关键物件细节",
+    "overShoulder": "过肩镜头，越过一个人物肩膀看向另一主体",
+    "aerial": "俯瞰镜头，高空视角",
+    "pov": "第一人称视角镜头"
+  },
+  "letteringHints": {
+    "bubble": "画面预留对话气泡位置，气泡数量：{dialogueCount}，分布在人物头部附近，避免遮挡面部关键特征",
+    "caption": "画面底部预留字幕条区域，字幕条不遮挡人物主体，字幕数量：{dialogueCount}",
+    "chat": "画面呈现手机聊天界面布局，左侧消息靠左对齐，右侧消息靠右对齐，气泡数量：{dialogueCount}",
+    "none": "画面无需预留文字区域"
+  },
+  "qualityWords": {
+    "draft": "低分辨率草稿预览",
+    "hd": "高清细节，画质精致，8k"
+  },
+  "lineWeightLabels": {
+    "thin": "纤细",
+    "normal": "适中",
+    "bold": "粗犷"
+  },
+  "lightingLabels": {
+    "soft": "柔和",
+    "balanced": "均衡",
+    "strong": "强烈"
+  },
+  "negativeWords": "低质量，模糊，变形手指，多余肢体，文字乱码，水印，签名，裁切不全"
+}
