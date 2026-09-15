@@ -263,6 +263,8 @@ export interface ChapterVersions {
   content: number;
   /** 分镜版本 */
   storyboard: number;
+  /** 分镜元数据版本（镜头/情绪/动作概述，仅作为描述词素材） */
+  metadata?: number;
   /** 角色/场景版本 */
   cast: number;
   /** 台词版本 */
@@ -275,6 +277,33 @@ export interface ChapterVersions {
 
 export function emptyChapterVersions(): ChapterVersions {
   return { content: 0, storyboard: 0, cast: 0, dialogue: 0, prompt: 0, presentation: 0 };
+}
+
+/** 阶段产出所基于的上游版本快照（待更新判定依据，规则第7条数据流单向） */
+export interface PanelStageBasis {
+  storyboard: number;
+  metadata: number;
+  cast: number;
+  dialogue: number;
+  presentation: number;
+}
+
+/** 成品图产出所基于的版本（描述词 + 表现层） */
+export interface PanelImageBasis {
+  prompt: number;
+  presentation: number;
+}
+
+/** 下游阶段落库时盖章：记录当时章节版本，供 syncService 比对 */
+export function stageBasisSnapshot(chapter: ComicChapter): PanelStageBasis {
+  const versions = chapter.versions;
+  return {
+    storyboard: versions.storyboard,
+    metadata: versions.metadata ?? 0,
+    cast: versions.cast,
+    dialogue: versions.dialogue,
+    presentation: versions.presentation,
+  };
 }
 
 /** 灵感扩写参数（唯一走大模型的导入方式） */
@@ -486,6 +515,12 @@ export interface ComicPanel {
   generation: PanelGeneration;
   /** 生成分镜内容时的上游版本快照（stale 计算依据） */
   upstreamVersions: ChapterVersions;
+  /** 台词提取时所基于的上游版本（缺失＝尚未提取过） */
+  dialogueBasis?: PanelStageBasis;
+  /** 描述词生成时所基于的上游版本（缺失＝尚未生成） */
+  promptBasis?: PanelStageBasis;
+  /** 当前成品图所基于的描述词/表现层版本（缺失＝尚未成功生成） */
+  imageBasis?: PanelImageBasis;
   createdAt: string;
   updatedAt: string;
 }

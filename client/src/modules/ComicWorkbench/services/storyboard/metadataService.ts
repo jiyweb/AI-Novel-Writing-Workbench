@@ -7,7 +7,7 @@
  */
 import { z } from "zod";
 import type { ComicChapter, ComicPanel } from "../../types";
-import { savePanels } from "../../db/comicDb";
+import { saveChapter, savePanels } from "../../db/comicDb";
 import { chatJson, describeAiError, type AiError } from "../ai/llmClient";
 import type { AiConnectionSettings } from "../../types";
 
@@ -107,6 +107,12 @@ export async function enrichPanelMetadata(params: EnrichMetadataParams): Promise
   }
 
   await savePanels(eligible);
+  // 元数据是描述词素材：增强后递增元数据版本，提示描述词待更新（规则第7条，不静默改写）
+  if (updated > 0) {
+    chapter.versions.metadata = (chapter.versions.metadata ?? 0) + 1;
+    chapter.updatedAt = new Date().toISOString();
+    await saveChapter(chapter);
+  }
   return updated;
 }
 

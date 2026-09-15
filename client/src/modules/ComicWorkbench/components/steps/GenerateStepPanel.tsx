@@ -43,7 +43,13 @@ import {
   regeneratePanelImage,
   runChapterQueue,
 } from "../../services/generationQueue";
+import { computePanelStaleMap } from "../../services/syncService";
+import { StaleBadge } from "../common/StaleBadge";
+import { StaleBanner } from "../common/StaleBanner";
 import type { ComicPanel, GenerationMode, GenerationStatus } from "../../types";
+
+/** 章节未就绪时的空待更新集合 */
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 export function GenerateStepPanel(props: { projectId: string }) {
   const { projectId } = props;
@@ -85,6 +91,12 @@ export function GenerateStepPanel(props: { projectId: string }) {
     running: panels.filter((panel) => panel.generation.status === "running").length,
   };
 
+  // 版本链待更新状态（横幅计数 + 列表逐镜徽标）
+  const stale = useMemo(
+    () => (chapter ? computePanelStaleMap(panels, chapter) : null),
+    [panels, chapter],
+  );
+
   // 断点续传：进入章节时恢复上次中断的任务
   useEffect(() => {
     if (!chapterId) return;
@@ -109,15 +121,23 @@ export function GenerateStepPanel(props: { projectId: string }) {
     }
   };
 
+  /**
+   * 运行生成队列。onlyStale 为 true 时只为待更新画面建任务
+   * （成品仍在但基于旧描述词/旧画风），其余情况为全部未完成分镜补任务。
+   */
   const runMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (onlyStale: boolean) => {
       if (!chapter || !project) throw new Error("请先选择章节");
       if (!aiSettings.data) throw new Error("尚未配置 AI 接口，请先在 AI 设置中填写");
       if (!isImageReady(aiSettings.data)) throw new Error("生图模型配置不完整，请在 AI 设置中检查");
-      await ensureChapterTasks(chapter, panels, mode);
+      const targets = onlyStale
+        ? panels.filter((panel) => stale?.imageIds.has(panel.id))
+        : panels;
+      if (targets.length === 0) throw new Error("没有需要生成的画面");
+      await ensureChapterTasks(chapter, targets, mode, { includeUpToDate: onlyStale });
       const controller = new AbortController();
       abortRef.current = controller;
-      setProgress({ done: 0, total: panels.length, succeeded: 0, failed: 0 });
+      setProgress({ done: 0, total: targets.length, succeeded: 0, failed: 0 });
       return runChapterQueue({
         chapter,
         panels,
@@ -239,7 +259,7 @@ export function GenerateStepPanel(props: { projectId: string }) {
             取消生成
           </Button>
         ) : (
-          <Button size="sm" disabled={!imageReady} onClick={() => runMutation.mutate()}>
+          <Button size="sm" disabled={!imageReady} onClick={() => runMutation.mutate(false)}>
             {hasResumable ? <RefreshCw className="mr-1.5 h-4 w-4" /> : <Play className="mr-1.5 h-4 w-4" />}
             {hasResumable ? "继续生成" : "开始生成"}
           </Button>
@@ -263,6 +283,19 @@ export function GenerateStepPanel(props: { projectId: string }) {
         )}
       </div>
 
+      {/* 待更新横幅：描述词/画风变化后提示重出画面 */}
+      {stale && stale.summary.image > 0 ? (
+        <div className="mt-3">
+          <StaleBanner
+            text={`描述词或画风有更新，${stale.summary.image} 张画面与当前设定不一致`}
+            actionLabel="重新生成待更新画面"
+            busy={busy}
+            disabled={!imageReady}
+            onAction={() => runMutation.mutate(true)}
+          />
+        </div>
+      ) : null}
+
       {/* 分镜生成列表（虚拟滚动） */}
       <section className="mt-4 flex min-h-0 flex-1 flex-col rounded-xl bg-muted/20">
         <div className="px-3 pb-1 pt-2 text-xs text-muted-foreground">
@@ -273,6 +306,7 @@ export function GenerateStepPanel(props: { projectId: string }) {
           mode={mode}
           busy={busy}
           redrawingId={redrawingId}
+          staleIds={stale?.imageIds ?? EMPTY_IDS}
           onRedraw={(panel, targetMode) => redrawMutation.mutate({ panel, targetMode })}
         />
       </section>
@@ -289,6 +323,7 @@ function GeneratePanelList(props: {
   mode: GenerationMode;
   busy: boolean;
   redrawingId: string | null;
+  staleIds: ReadonlySet<string>;
   onRedraw: (panel: ComicPanel, mode: GenerationMode) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -329,6 +364,7 @@ function GeneratePanelList(props: {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold">{item.index + 1}</span>
                     <GenerationBadge status={generation.status} mode={generation.mode} attempts={generation.attempts} />
+                    {props.staleIds.has(panel.id) ? <StaleBadge /> : null}
                     {isRedrawing ? (
                       <Badge variant="outline" className="text-[10px]">
                         <Loader2 className="mr-1 h-3 w-3 animate-spin" />

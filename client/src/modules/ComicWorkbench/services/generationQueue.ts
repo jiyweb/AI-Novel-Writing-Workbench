@@ -18,7 +18,6 @@ import {
   generateId,
   getPanel,
   listGenerationTasks,
-  saveChapter,
   saveGenerationTask,
   saveImageBlob,
   savePanel,
@@ -34,6 +33,7 @@ import type {
   GenerationMode,
   GenerationTask,
 } from "../types";
+import { stageBasisSnapshot } from "../types";
 
 export interface QueueProgress {
   done: number;
@@ -95,16 +95,20 @@ export async function recoverInterruptedTasks(chapterId: string): Promise<number
 /**
  * 为章节补齐生成任务：已有目标模式成品/已有进行中任务的分镜跳过，
  * 其余（未生成、或成品档位不符）各建一个 pending 任务。
+ * includeUpToDate 为 true 时连「已有同档成品」的分镜也建任务
+ * （用于重出待更新画面：成品仍在但基于旧描述词/旧画风）。
  */
 export async function ensureChapterTasks(
   chapter: ComicChapter,
   panels: ComicPanel[],
   mode: GenerationMode,
+  options?: { includeUpToDate?: boolean },
 ): Promise<number> {
   const existing = await listGenerationTasks(chapter.id);
   let created = 0;
   for (const panel of panels) {
     if (
+      !options?.includeUpToDate &&
       panel.generation.status === "success" &&
       panel.generation.mode === mode &&
       panel.generation.imageId
@@ -187,12 +191,8 @@ export async function runChapterQueue(params: RunQueueParams): Promise<RunQueueR
     Array.from({ length: Math.min(defaults.imageConcurrency, ordered.length) }, () => worker()),
   );
 
-  // 队列有产出时递增章节描述词下游版本（表现层）
-  if (succeeded > 0) {
-    params.chapter.versions.presentation += 1;
-    params.chapter.updatedAt = new Date().toISOString();
-    await saveChapter(params.chapter);
-  }
+  // 表现层版本（presentation）只由形态/画风变更推进；图片产出不改版本，
+  // 否则刚生成的画面会立刻被判定为「基于旧画风」。
   return { succeeded, failed, cancelled };
 }
 
@@ -268,7 +268,7 @@ async function runSingleTask(
   const pixel =
     task.mode === "draft" ? form?.draftPixel : (form?.referencePixel ?? form?.draftPixel);
 
-  // 描述词兜底：缺失时按公式现场组装（不标记手动）
+  // 描述词兜底：缺失时按公式现场组装（不标记手动），并按当前上游版本盖章
   if (!panel.prompt?.final) {
     panel.prompt = buildPanelPrompt({
       chapter: params.chapter,
@@ -278,6 +278,7 @@ async function runSingleTask(
       scenes: params.scenes,
       customFormula: params.customFormula,
     });
+    panel.promptBasis = stageBasisSnapshot(params.chapter);
     await savePanel(panel);
   }
 
@@ -321,6 +322,11 @@ async function runSingleTask(
         await deleteImageRecord(panel.generation.imageId, params.project.id);
       }
       const now = new Date().toISOString();
+      // 盖章：记录成品图所基于的描述词/表现层版本，画风或描述词更新后据此提示重绘
+      panel.imageBasis = {
+        prompt: params.chapter.versions.prompt,
+        presentation: params.chapter.versions.presentation,
+      };
       panel.generation = {
         status: "success",
         mode: task.mode,

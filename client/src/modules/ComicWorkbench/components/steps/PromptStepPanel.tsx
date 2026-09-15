@@ -36,6 +36,9 @@ import {
   resetPanelPrompt,
   saveCustomPromptFormula,
 } from "../../services/promptEngine";
+import { computePanelStaleMap, syncChapterText } from "../../services/syncService";
+import { StaleBadge } from "../common/StaleBadge";
+import { StaleBanner } from "../common/StaleBanner";
 import type { ComicPanel, CustomPromptFormula, PromptSegments } from "../../types";
 
 const SEGMENT_KEYS = promptFormula.segmentOrder;
@@ -53,6 +56,9 @@ const SEGMENT_LABELS: Record<keyof PromptSegments, string> = {
 
 const TEXTAREA_CLASS =
   "w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** 章节未就绪时的空待更新集合 */
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 export function PromptStepPanel(props: { projectId: string }) {
   const { projectId } = props;
@@ -86,6 +92,12 @@ export function PromptStepPanel(props: { projectId: string }) {
   const [editingSegments, setEditingSegments] = useState<PromptSegments | null>(null);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // 版本链待更新状态（横幅计数 + 列表逐镜徽标）
+  const stale = useMemo(
+    () => (chapter ? computePanelStaleMap(panels, chapter) : null),
+    [panels, chapter],
+  );
 
   const selectedPanel = panels.find((panel) => panel.id === selectedPanelId) ?? null;
 
@@ -150,6 +162,30 @@ export function PromptStepPanel(props: { projectId: string }) {
     onError: (error: Error) => toast.error(`保存失败：${error.message}`),
   });
 
+  /** 一键同步：先补齐台词重提（若有待更新），再重建描述词（画面重生成在生成步骤进行） */
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter || !project) throw new Error("章节或项目不存在");
+      return syncChapterText({
+        chapter,
+        panels,
+        project,
+        characters,
+        scenes,
+        customFormula,
+      });
+    },
+    onSuccess: async (result) => {
+      toast.success(
+        result.imageStale > 0
+          ? `同步完成，${result.imageStale} 张画面待在「生成」步骤重新生成`
+          : "同步完成：描述词已与最新内容对齐",
+      );
+      await invalidate();
+    },
+    onError: (error: Error) => toast.error(`同步失败：${error.message}`),
+  });
+
   if (chapters.length === 0) {
     return <EmptyHint text="还没有章节。先回到「内容导入」导入或生成正文。" />;
   }
@@ -160,13 +196,13 @@ export function PromptStepPanel(props: { projectId: string }) {
     return <EmptyHint text="本章还没有分镜。先回到「智能分镜」生成分镜，再来生成描述词。" />;
   }
 
-  const busy = generateMutation.isPending || panelMutation.isPending;
+  const busy = generateMutation.isPending || panelMutation.isPending || syncMutation.isPending;
   const promptCount = panels.filter((panel) => panel.prompt).length;
   const manualCount = panels.filter((panel) => panel.prompt?.manualOverride).length;
 
   const saveSelected = () => {
     if (!selectedPanel || !editingSegments) return;
-    panelMutation.mutate(() => applyPromptEdit(selectedPanel, editingSegments));
+    panelMutation.mutate(() => applyPromptEdit(chapter, selectedPanel, editingSegments));
   };
 
   const resetSelected = () => {
@@ -237,6 +273,18 @@ export function PromptStepPanel(props: { projectId: string }) {
         </span>
       </div>
 
+      {/* 待更新横幅：上游内容变化后提示同步 */}
+      {stale && stale.summary.prompt > 0 ? (
+        <div className="pt-3">
+          <StaleBanner
+            text={`分镜、角色或台词有更新，${stale.summary.prompt} 个分镜的描述词需要重建`}
+            actionLabel="一键同步"
+            busy={syncMutation.isPending}
+            onAction={() => syncMutation.mutate()}
+          />
+        </div>
+      ) : null}
+
       {/* 主体：左列表 / 右编辑 */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 pt-4 lg:grid-cols-2">
         <section className="flex min-h-0 flex-col rounded-xl bg-muted/20">
@@ -245,6 +293,7 @@ export function PromptStepPanel(props: { projectId: string }) {
           </div>
           <PromptPanelList
             panels={panels}
+            staleIds={stale?.promptIds ?? EMPTY_IDS}
             selectedPanelId={selectedPanelId}
             onSelect={setSelectedPanelId}
           />
@@ -349,6 +398,7 @@ export function PromptStepPanel(props: { projectId: string }) {
 
 function PromptPanelList(props: {
   panels: ComicPanel[];
+  staleIds: ReadonlySet<string>;
   selectedPanelId: string | null;
   onSelect: (panelId: string) => void;
 }) {
@@ -407,6 +457,7 @@ function PromptPanelList(props: {
                       未生成
                     </Badge>
                   )}
+                  {props.staleIds.has(panel.id) ? <StaleBadge /> : null}
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                   {panel.prompt?.final || "尚未生成描述词"}

@@ -12,7 +12,14 @@
 import { generateId, saveChapter, savePanel } from "../db/comicDb";
 import { listCharacters } from "../db/comicDb";
 import { shotDensity } from "./configService";
-import type { ComicChapter, ComicLetteringMode, ComicPanel, DialogueLayout, PanelDialogue } from "../types";
+import {
+  stageBasisSnapshot,
+  type ComicChapter,
+  type ComicLetteringMode,
+  type ComicPanel,
+  type DialogueLayout,
+  type PanelDialogue,
+} from "../types";
 
 // ---------------------------------------------------------------------------
 // 确定性提取
@@ -40,6 +47,8 @@ export async function extractDialogues(
     const slice = chapter.sourceContent.slice(panel.sourceStartIndex, panel.sourceEndIndex);
     const dialogues = scanDialogues(slice, panel.sourceStartIndex, rules, characters);
     panel.dialogues = dialogues;
+    // 盖章：记录台词所基于的分镜/角色库版本，供待更新判定（规则第7条）
+    panel.dialogueBasis = stageBasisSnapshot(chapter);
     panel.updatedAt = new Date().toISOString();
     await savePanel(panel);
     if (dialogues.length > 0) panelsWithDialogue += 1;

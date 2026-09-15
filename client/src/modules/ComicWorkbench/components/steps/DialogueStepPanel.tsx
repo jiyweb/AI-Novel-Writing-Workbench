@@ -30,6 +30,8 @@ import {
   useComicCharacters,
   useComicPanels,
   useComicProject,
+  useComicScenes,
+  useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
 import { getFormById } from "../../services/configService";
@@ -40,6 +42,9 @@ import {
   extractDialogues,
   updateDialogue,
 } from "../../services/dialogueService";
+import { computePanelStaleMap, syncChapterText } from "../../services/syncService";
+import { StaleBadge } from "../common/StaleBadge";
+import { StaleBanner } from "../common/StaleBanner";
 import type {
   ComicCharacter,
   ComicLetteringMode,
@@ -54,6 +59,9 @@ const LETTERING_LABELS: Record<ComicLetteringMode, string> = {
   chat: "聊天框",
   none: "无台词呈现",
 };
+
+/** 章节未就绪时的空待更新集合 */
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 export function DialogueStepPanel(props: { projectId: string }) {
   const { projectId } = props;
@@ -80,11 +88,21 @@ export function DialogueStepPanel(props: { projectId: string }) {
   );
   const charactersQuery = useComicCharacters(projectId);
   const characters = charactersQuery.data ?? [];
+  const scenesQuery = useComicScenes(projectId);
+  const scenes = scenesQuery.data ?? [];
+  const settingsQuery = useWorkbenchSettings();
+  const customFormula = settingsQuery.data?.customPromptFormula ?? null;
 
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
   /** 拖拽/滑杆过程中的临时布局（提交落库后与查询数据一致） */
   const [liveLayouts, setLiveLayouts] = useState<Record<string, DialogueLayout>>({});
+
+  // 版本链待更新状态（横幅计数 + 列表逐镜徽标）
+  const stale = useMemo(
+    () => (chapter ? computePanelStaleMap(panels, chapter) : null),
+    [panels, chapter],
+  );
 
   const selectedPanel = panels.find((panel) => panel.id === selectedPanelId) ?? null;
   const selectedDialogueIndex = selectedPanel
@@ -144,6 +162,30 @@ export function DialogueStepPanel(props: { projectId: string }) {
     onError: (error: Error) => toast.error(`保存失败：${error.message}`),
   });
 
+  /** 一键同步：按依赖序重跑台词提取与描述词组装（画面重生成在生成步骤进行） */
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter || !project) throw new Error("章节或项目不存在");
+      return syncChapterText({
+        chapter,
+        panels,
+        project,
+        characters,
+        scenes,
+        customFormula,
+      });
+    },
+    onSuccess: async (result) => {
+      toast.success(
+        result.imageStale > 0
+          ? `同步完成，${result.imageStale} 张画面待在「生成」步骤重新生成`
+          : "同步完成：台词与描述词已与最新内容对齐",
+      );
+      await invalidate();
+    },
+    onError: (error: Error) => toast.error(`同步失败：${error.message}`),
+  });
+
   if (chapters.length === 0) {
     return <EmptyHint text="还没有章节。先回到「内容导入」导入或生成正文，再来提取台词。" />;
   }
@@ -154,7 +196,7 @@ export function DialogueStepPanel(props: { projectId: string }) {
     return <EmptyHint text="本章还没有分镜。先回到「智能分镜」生成分镜，再来进行台词编排。" />;
   }
 
-  const busy = extractMutation.isPending || dialogueMutation.isPending;
+  const busy = extractMutation.isPending || dialogueMutation.isPending || syncMutation.isPending;
   const totalDialogues = panels.reduce((sum, panel) => sum + panel.dialogues.length, 0);
 
   const handleExtract = () => {
@@ -224,6 +266,18 @@ export function DialogueStepPanel(props: { projectId: string }) {
           </span>
         ) : null}
       </div>
+
+      {/* 待更新横幅：分镜/角色库变化后提示同步 */}
+      {stale && stale.summary.dialogue > 0 ? (
+        <div className="pt-3">
+          <StaleBanner
+            text={`分镜或角色库有更新，${stale.summary.dialogue} 个分镜的台词需要重新提取`}
+            actionLabel="一键同步"
+            busy={syncMutation.isPending}
+            onAction={() => syncMutation.mutate()}
+          />
+        </div>
+      ) : null}
 
       {/* 主体：左编排 / 右分镜列表 */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 pt-4 lg:grid-cols-2">
@@ -362,6 +416,7 @@ export function DialogueStepPanel(props: { projectId: string }) {
           <DialoguePanelList
             panels={panels}
             sourceContent={chapter.sourceContent}
+            staleIds={stale?.dialogueIds ?? EMPTY_IDS}
             selectedPanelId={selectedPanelId}
             onSelect={(panelId) => setSelectedPanelId(panelId)}
           />
@@ -593,6 +648,7 @@ function DialogueRow(props: {
 function DialoguePanelList(props: {
   panels: ComicPanel[];
   sourceContent: string;
+  staleIds: ReadonlySet<string>;
   selectedPanelId: string | null;
   onSelect: (panelId: string) => void;
 }) {
@@ -652,6 +708,7 @@ function DialoguePanelList(props: {
                       无台词
                     </Badge>
                   )}
+                  {props.staleIds.has(panel.id) ? <StaleBadge /> : null}
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                   {isEmptyShot ? "空镜：不引用原文" : text}

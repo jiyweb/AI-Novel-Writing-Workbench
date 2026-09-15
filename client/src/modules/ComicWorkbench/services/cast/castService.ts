@@ -172,11 +172,22 @@ function mergeFeatures(base: string, extra: string): string {
   return `${base}；${extra}`;
 }
 
+/** 角色/场景卡内容变化后递增项目内全部章节 cast 版本，供下游 stale 判定 */
+async function bumpCastVersion(projectId: string): Promise<void> {
+  const chapters = await listChapters(projectId);
+  const now = new Date().toISOString();
+  for (const item of chapters) {
+    item.versions.cast += 1;
+    item.updatedAt = now;
+    await saveChapter(item);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 手动编辑与合并
 // ---------------------------------------------------------------------------
 
-/** 保存角色卡（设定变化时自动重组描述词片段） */
+/** 保存角色卡（设定变化时自动重组描述词片段；片段变化则递增 cast 版本） */
 export async function saveCharacterCard(
   character: ComicCharacter,
   updates: Partial<Omit<ComicCharacter, "id" | "projectId" | "updatedAt">>,
@@ -190,6 +201,9 @@ export async function saveCharacterCard(
   };
   next.promptFragment = buildCharacterPromptFragment(next);
   await saveCharacter(next);
+  if (next.promptFragment !== character.promptFragment) {
+    await bumpCastVersion(next.projectId);
+  }
   return next;
 }
 
@@ -206,6 +220,9 @@ export async function saveSceneCard(
   };
   next.promptFragment = buildScenePromptFragment(next);
   await saveScene(next);
+  if (next.promptFragment !== scene.promptFragment) {
+    await bumpCastVersion(next.projectId);
+  }
   return next;
 }
 
@@ -221,6 +238,7 @@ export async function mergeCharacterInto(
   if (!primary || !duplicate) throw new Error("角色不存在或已被删除");
   if (primaryId === duplicateId) throw new Error("不能与自身合并");
 
+  const beforeFragment = primary.promptFragment;
   primary.appearance = primary.appearance || duplicate.appearance;
   primary.clothing = primary.clothing || duplicate.clothing;
   primary.features = mergeFeatures(primary.features, duplicate.features);
@@ -229,6 +247,9 @@ export async function mergeCharacterInto(
   primary.updatedAt = new Date().toISOString();
   await saveCharacter(primary);
   await deleteCharacter(duplicateId, projectId);
+  if (primary.promptFragment !== beforeFragment) {
+    await bumpCastVersion(projectId);
+  }
   return primary;
 }
 
@@ -243,6 +264,7 @@ export async function mergeSceneInto(
   if (!primary || !duplicate) throw new Error("场景不存在或已被删除");
   if (primaryId === duplicateId) throw new Error("不能与自身合并");
 
+  const beforeFragment = primary.promptFragment;
   primary.spaceStructure = primary.spaceStructure || duplicate.spaceStructure;
   primary.environment = primary.environment || duplicate.environment;
   primary.mergedFrom = [...(primary.mergedFrom ?? []), duplicate.id, ...(duplicate.mergedFrom ?? [])];
@@ -250,15 +272,21 @@ export async function mergeSceneInto(
   primary.updatedAt = new Date().toISOString();
   await saveScene(primary);
   await deleteScene(duplicateId, projectId);
+  if (primary.promptFragment !== beforeFragment) {
+    await bumpCastVersion(projectId);
+  }
   return primary;
 }
 
 export async function removeCharacter(id: string, projectId: string): Promise<void> {
   await deleteCharacter(id, projectId);
+  // 删除可能影响引用该角色的描述词组合，保守递增版本提示下游
+  await bumpCastVersion(projectId);
 }
 
 export async function removeScene(id: string, projectId: string): Promise<void> {
   await deleteScene(id, projectId);
+  await bumpCastVersion(projectId);
 }
 
 // ---------------------------------------------------------------------------

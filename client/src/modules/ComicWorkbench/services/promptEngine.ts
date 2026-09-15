@@ -10,15 +10,16 @@
  */
 import { getFormById, getStylePresetById, promptFormula } from "./configService";
 import { getSettings, savePanel, saveChapter, saveSettings } from "../db/comicDb";
-import type {
-  ComicChapter,
-  ComicCharacter,
-  ComicPanel,
-  ComicProject,
-  ComicScene,
-  CustomPromptFormula,
-  PanelPrompt,
-  PromptSegments,
+import {
+  stageBasisSnapshot,
+  type ComicChapter,
+  type ComicCharacter,
+  type ComicPanel,
+  type ComicProject,
+  type ComicScene,
+  type CustomPromptFormula,
+  type PanelPrompt,
+  type PromptSegments,
 } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -172,6 +173,8 @@ export async function generateChapterPrompts(params: GeneratePromptsParams): Pro
       continue;
     }
     panel.prompt = buildPanelPrompt({ ...params, panel });
+    // 盖章：记录描述词所基于的上游版本，供待更新判定（规则第7条）
+    panel.promptBasis = stageBasisSnapshot(params.chapter);
     panel.updatedAt = new Date().toISOString();
     await savePanel(panel);
     updated += 1;
@@ -184,8 +187,12 @@ export async function generateChapterPrompts(params: GeneratePromptsParams): Pro
   return updated;
 }
 
-/** 保存单镜手动编辑（段落可改，最终词由公式顺序重新拼接） */
-export async function applyPromptEdit(panel: ComicPanel, segments: PromptSegments): Promise<ComicPanel> {
+/** 保存单镜手动编辑（段落可改，最终词由公式顺序重新拼接）；以当前上游版本盖章 */
+export async function applyPromptEdit(
+  chapter: ComicChapter,
+  panel: ComicPanel,
+  segments: PromptSegments,
+): Promise<ComicPanel> {
   const next: ComicPanel = {
     ...panel,
     prompt: {
@@ -193,6 +200,7 @@ export async function applyPromptEdit(panel: ComicPanel, segments: PromptSegment
       segments,
       manualOverride: true,
     },
+    promptBasis: stageBasisSnapshot(chapter),
     updatedAt: new Date().toISOString(),
   };
   await savePanel(next);
@@ -211,6 +219,7 @@ export async function resetPanelPrompt(params: {
   const next: ComicPanel = {
     ...params.panel,
     prompt: buildPanelPrompt(params),
+    promptBasis: stageBasisSnapshot(params.chapter),
     updatedAt: new Date().toISOString(),
   };
   await savePanel(next);
