@@ -18,6 +18,7 @@ import { StoryboardStepPanel } from "../components/steps/StoryboardStepPanel";
 import { CastStepPanel } from "../components/steps/CastStepPanel";
 import { DialogueStepPanel } from "../components/steps/DialogueStepPanel";
 import { PromptStepPanel } from "../components/steps/PromptStepPanel";
+import { GenerateStepPanel } from "../components/steps/GenerateStepPanel";
 import type { WorkbenchStep } from "../stores/workbenchStore";
 
 export default function ComicProjectPage() {
@@ -109,6 +110,8 @@ function StepBody(props: { step: WorkbenchStep; projectId: string }) {
       return <DialogueStepPanel projectId={props.projectId} />;
     case "prompt":
       return <PromptStepPanel projectId={props.projectId} />;
+    case "generate":
+      return <GenerateStepPanel projectId={props.projectId} />;
     default:
       return (
         <div className="rounded-xl bg-muted/30 px-6 py-16 text-center text-sm text-muted-foreground">

@@ -52,6 +52,7 @@
     "imagePollIntervalMs": 5000,
     "imagePollMaxMs": 300000,
     "maxRetries": 3,
-    "retryBaseDelayMs": 800
+    "retryBaseDelayMs": 800,
+    "imageConcurrency": 2
   }
 }

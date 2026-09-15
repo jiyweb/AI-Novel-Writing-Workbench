@@ -140,6 +140,7 @@ const aiProvidersSchema = z.object({
     imagePollMaxMs: z.number().positive(),
     maxRetries: z.number().int().min(1),
     retryBaseDelayMs: z.number().positive(),
+    imageConcurrency: z.number().int().min(1),
   }),
 });
 

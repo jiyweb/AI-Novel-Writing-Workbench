@@ -212,6 +212,8 @@ export interface AiProvidersConfig {
     imagePollMaxMs: number;
     maxRetries: number;
     retryBaseDelayMs: number;
+    /** 生图队列并发数 */
+    imageConcurrency: number;
   };
 }
 
