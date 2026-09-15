@@ -2,6 +2,7 @@
   "$comment": "描述词公式配置：segmentOrder 控制拼接顺序，segmentTemplates 中 {placeholder} 会被运行时替换。可用占位符见模块 README。",
   "segmentOrder": ["form", "style", "scene", "characters", "action", "camera", "lettering", "quality"],
   "segmentJoiner": "，",
+  "actionFallbackCharLimit": 80,
   "segmentTemplates": {
     "form": "{formPromptPrefix}",
     "style": "{styleKeywords}，色调：{colorTone}，线条：{lineWeight}，光影：{lighting}{customKeywords}",

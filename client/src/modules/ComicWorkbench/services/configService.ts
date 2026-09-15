@@ -99,6 +99,7 @@ const promptFormulaSchema = z.object({
     z.enum(["form", "style", "scene", "characters", "action", "camera", "lettering", "quality"]),
   ).min(1),
   segmentJoiner: z.string(),
+  actionFallbackCharLimit: z.number().int().positive(),
   segmentTemplates: z.record(z.string(), z.string()),
   cameraDirectives: z.record(z.string(), z.string()),
   letteringHints: z.record(z.string(), z.string()),

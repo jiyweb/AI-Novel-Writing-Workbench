@@ -166,6 +166,8 @@ export interface PromptFormulaConfig {
   segmentOrder: Array<keyof PromptSegments>;
   /** 段落连接符 */
   segmentJoiner: string;
+  /** 无元数据时剧情段回落到原文的截断长度 */
+  actionFallbackCharLimit: number;
   /** 各段模板，{placeholder} 会被替换 */
   segmentTemplates: Record<keyof PromptSegments, string>;
   /** 镜头指令映射 */
@@ -522,10 +524,18 @@ export interface MarketingCopy {
   generatedAt: string;
 }
 
+/** 用户保存的个人描述词模板（覆盖默认公式模板，存全局设置） */
+export interface CustomPromptFormula {
+  segmentTemplates: Partial<Record<keyof PromptSegments, string>>;
+  updatedAt: string;
+}
+
 /** 个人风格预设库 / AI 配置等全局设置 */
 export interface WorkbenchSettings {
   ai: AiConnectionSettings | null;
   customStylePresets: CustomStylePreset[];
+  /** 自定义描述词公式模板（未设置时使用 config/promptFormula.json 默认值） */
+  customPromptFormula?: CustomPromptFormula;
   /** 最近打开的项目（用于恢复现场） */
   lastProjectId?: string;
   lastChapterByProject: Record<string, string>;
