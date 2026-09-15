@@ -211,56 +211,6 @@ async function readImageAssetSources(): Promise<VisualAssetSourceItem[]> {
   });
 }
 
-async function readComicSources(): Promise<VisualAssetSourceItem[]> {
-  const [characters, characterAssets, scenes, panels] = await Promise.all([
-    prisma.comicCharacter.findMany({ include: { project: { select: { id: true, title: true } } } }),
-    prisma.comicCharacterAsset.findMany({ include: { project: { select: { id: true, title: true } }, character: { select: { name: true } } } }),
-    prisma.comicScene.findMany({ include: { project: { select: { id: true, title: true } } } }),
-    prisma.comicPanel.findMany({ include: { episode: { include: { project: { select: { id: true, title: true } } } } } }),
-  ]);
-  const output: VisualAssetSourceItem[] = [];
-  for (const character of characters) {
-    const base: SourceItemBase = {
-      sourceDomain: "comic", sourceType: "character_sheet", sourceId: character.id,
-      sourceLabel: `${character.name} · 角色设计稿`, scopeKind: "comic_project", scopeId: character.project.id,
-      scopeLabel: character.project.title, kind: "comic_character_sheet", fallbackCreatedAt: character.createdAt,
-    };
-    output.push(...readVersionedState(base, character.sheetData));
-    const sheet = parseImageState(character.sheetData);
-    const expression = sheet?.assets && typeof sheet.assets === "object" && !Array.isArray(sheet.assets)
-      ? (sheet.assets as { expression?: ImageState }).expression
-      : undefined;
-    const expressionEntry = expression ? fromState({ ...base, sourceType: "character_expression", sourceLabel: `${character.name} · 表情稿` }, expression, "current:expression") : null;
-    if (expressionEntry) output.push(expressionEntry);
-  }
-  for (const asset of characterAssets) {
-    output.push(...readVersionedState({
-      sourceDomain: "comic", sourceType: "character_asset", sourceId: asset.id,
-      sourceLabel: `${asset.character.name} · ${asset.name}`, scopeKind: "comic_project", scopeId: asset.project.id,
-      scopeLabel: asset.project.title, kind: "comic_character_asset", fallbackCreatedAt: asset.createdAt,
-      metadata: { assetType: asset.assetType },
-    }, asset.imageData));
-  }
-  for (const scene of scenes) {
-    output.push(...readVersionedState({
-      sourceDomain: "comic", sourceType: "scene_sheet", sourceId: scene.id,
-      sourceLabel: `场景 · ${scene.name}`, scopeKind: "comic_project", scopeId: scene.project.id,
-      scopeLabel: scene.project.title, kind: "comic_scene", fallbackCreatedAt: scene.createdAt,
-    }, scene.sheetData));
-  }
-  for (const panel of panels) {
-    const scope = panel.episode.project;
-    const base: SourceItemBase = {
-      sourceDomain: "comic", sourceType: "panel", sourceId: panel.id,
-      sourceLabel: `第 ${panel.episode.order} 话 · 第 ${panel.order} 格`, scopeKind: "comic_project", scopeId: scope.id,
-      scopeLabel: scope.title, kind: "comic_panel", fallbackCreatedAt: panel.createdAt,
-    };
-    output.push(...readVersionedState(base, panel.imageData));
-    output.push(...readVersionedState({ ...base, sourceType: "panel_lettered", sourceLabel: `${base.sourceLabel} · 成品` }, panel.letteredData));
-  }
-  return output;
-}
-
 async function readDramaSources(): Promise<VisualAssetSourceItem[]> {
   const [characters, shots] = await Promise.all([
     prisma.dramaCharacter.findMany({ include: { project: { select: { id: true, title: true } } } }),
@@ -288,6 +238,6 @@ async function readDramaSources(): Promise<VisualAssetSourceItem[]> {
 }
 
 export async function collectVisualAssetSources(): Promise<VisualAssetSourceItem[]> {
-  const groups = await Promise.all([readImageAssetSources(), readComicSources(), readDramaSources()]);
+  const groups = await Promise.all([readImageAssetSources(), readDramaSources()]);
   return groups.flat();
 }

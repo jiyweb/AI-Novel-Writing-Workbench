@@ -106,14 +106,14 @@ const REQUIRED_COLUMN_BACKFILLS = [
     columnDefinition: `"sourceInputCharCount" INTEGER`,
   },
   {
-    tableName: "ComicCharacter",
-    columnName: "gender",
-    columnDefinition: `"gender" TEXT NOT NULL DEFAULT 'unknown'`,
+    tableName: "DramaCharacter",
+    columnName: "portraitData",
+    columnDefinition: `"portraitData" TEXT`,
   },
   {
-    tableName: "ComicPanel",
-    columnName: "sceneRef",
-    columnDefinition: `"sceneRef" TEXT`,
+    tableName: "DramaCharacter",
+    columnName: "threeViewData",
+    columnDefinition: `"threeViewData" TEXT`,
   },
 ] as const;
 

@@ -30,6 +30,7 @@ server/src/prisma/dev.db-journal
 .trae/
 server/.tmp/
 desktop/build/
+desktop/.prebuilt/
 desktop/runtime-migration-smoke/
 server/prisma-diff-migrations-to-schema.sql
 

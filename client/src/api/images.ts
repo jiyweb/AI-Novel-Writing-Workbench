@@ -4,6 +4,28 @@ import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { apiClient } from "./client";
 import { API_BASE_URL } from "@/lib/constants";
 
+// ─── 生图前确认弹窗用 ─────────────────────────────────────────────────────────
+
+export interface ImageGenerationPreview {
+  kind: string;
+  title: string;
+  prompt: string;
+  negativePrompt?: string;
+  referenceImages: Array<{ kind: string; label: string; url: string; assetId?: string }>;
+  provider: string;
+  size: string;
+  availableProviders?: Array<{ value: string; label: string }>;
+  availableSizes?: string[];
+}
+
+export interface ImageGenerationOverrides {
+  promptOverride?: string;
+  providerOverride?: string;
+  sizeOverride?: string;
+  negativePromptOverride?: string;
+  excludedReferenceImageUrls?: string[];
+}
+
 export type CharacterImagePromptMode = "character_chain" | "direct";
 export type NovelCoverPromptMode = "novel_cover_chain" | "direct";
 export type ImagePromptOutputLanguage = "zh" | "en";

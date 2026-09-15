@@ -1,7 +1,7 @@
 /**
  * 图像生成 runtime 工具函数（单一来源）
  *
- * 替代散落在 4 个 comic service + 2 个 drama service 中的同名重复实现。
+ * 统一各生图入口（drama 等）中重复实现的状态机与落盘样板。
  */
 import fs from "fs/promises";
 import path from "path";

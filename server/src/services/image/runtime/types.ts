@@ -1,7 +1,7 @@
 /**
  * 图像生成 runtime 统一类型 + Adapter 接口
  *
- * 设计意图：comic 5 个 + drama 2 个生图入口（共 7 处）历史上各写一套
+ * 设计意图：各生图入口（drama 等）历史上各写一套
  * "业务表 JSON 字段 + idle→generating→done/error 状态机 + 落盘 + 清旧扩展名"样板。
  * 本模块把样板提到 runner 里执行一次，由 Adapter 适配各入口的状态字段。
  *
@@ -57,7 +57,7 @@ export interface GeneratedImageState {
  * `TState` 允许扩展自 GeneratedImageState 以保留入口特定字段（如表情稿的嵌套位置、Drama 的 portraitData 兼容字段）。
  */
 export interface ImageTargetAdapter<TState extends GeneratedImageState = GeneratedImageState> {
-  /** 标识，用于日志/trace（如 "comic.character.sheet" / "drama.shot.keyframe"） */
+  /** 标识，用于日志/trace（如 "drama.shot.keyframe"） */
   readonly kind: string;
   /** 读当前状态（不存在返回 { status: "idle" }） */
   loadState(): Promise<TState>;
@@ -113,7 +113,7 @@ export const DEFAULT_RUNTIME_SIZE: ImageSize = "1024x1536";
  * 前端弹窗展示这份数据，用户确认（可临时改 prompt/provider/size）后再调 generate。
  */
 export interface ImageGenerationPreview {
-  /** 入口 kind，如 "comic.character-asset" / "comic.scene" / "comic.panel" / "drama.character" 等 */
+  /** 入口 kind，如 "drama.character" 等 */
   kind: string;
   /** 入口标题（前端展示，如 "生成场景设定图：宗门大殿"） */
   title: string;

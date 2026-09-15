@@ -27,7 +27,7 @@ import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { BaseCharacter } from "@ai-novel/shared/types/novel";
 import type { ApiResponse } from "@ai-novel/shared/types/api";
 import { apiClient } from "./client";
-import type { ImageGenerationOverrides, ImageGenerationPreview } from "./comic";
+import type { ImageGenerationOverrides, ImageGenerationPreview } from "./images";
 
 export async function listBookAnalyses(params?: {
   keyword?: string;

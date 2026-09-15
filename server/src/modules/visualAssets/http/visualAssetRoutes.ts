@@ -6,7 +6,7 @@ import { authMiddleware } from "../../../middleware/auth";
 import { validate } from "../../../middleware/validate";
 import { visualAssetCatalogService } from "../application/VisualAssetCatalogService";
 
-const scopeKinds = ["global", "novel", "book_analysis", "comic_project", "drama_project"] as const satisfies readonly VisualAssetScopeKind[];
+const scopeKinds = ["global", "novel", "book_analysis", "drama_project"] as const satisfies readonly VisualAssetScopeKind[];
 
 const querySchema = z.object({
   scopeKind: z.enum(scopeKinds).optional(),

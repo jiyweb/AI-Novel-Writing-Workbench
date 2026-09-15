@@ -8,21 +8,17 @@ export const VISUAL_ASSET_KINDS = [
   "character",
   "cover",
   "illustration",
-  "comic_character_sheet",
-  "comic_character_asset",
-  "comic_scene",
-  "comic_panel",
   "drama_character_sheet",
   "drama_shot_keyframe",
 ] as const;
 
 export type VisualAssetKind = (typeof VISUAL_ASSET_KINDS)[number];
 
-export const VISUAL_ASSET_SOURCES = ["image_asset", "comic", "drama"] as const;
+export const VISUAL_ASSET_SOURCES = ["image_asset", "drama"] as const;
 export type VisualAssetSourceDomain = (typeof VISUAL_ASSET_SOURCES)[number];
 
 export type VisualAssetOrigin = "generated" | "uploaded" | "imported" | "unknown";
-export type VisualAssetScopeKind = "global" | "novel" | "book_analysis" | "comic_project" | "drama_project";
+export type VisualAssetScopeKind = "global" | "novel" | "book_analysis" | "drama_project";
 
 export interface VisualAssetSourceRef {
   domain: VisualAssetSourceDomain;

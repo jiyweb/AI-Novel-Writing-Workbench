@@ -1,14 +1,14 @@
 /**
  * 改编模块通用内容包契约（SourceBundle）
  *
- * drama 与 comic 的共享基础契约：任何内容源（小说导入/独立原创/文本导入/漫画导入）
+ * 各改编产线的共享基础契约：任何内容源（小说导入/独立原创/文本导入）
  * 都必须先产出 SourceBundle，改编产线引擎只面向 SourceBundle，与具体来源彻底解耦。
  *
- * 低耦合要点：本文件不 import 任何 novel/drama/comic 领域类型。
+ * 低耦合要点：本文件不 import 任何 novel/drama 领域类型。
  */
 
-/** 内容源类型（drama + comic 共用） */
-export type AdaptationSourceType = "novel_import" | "original" | "text_import" | "comic_import";
+/** 内容源类型 */
+export type AdaptationSourceType = "novel_import" | "original" | "text_import";
 
 /** 事实分类 */
 export type SourceFactCategory = "completed" | "revealed" | "state_changed";
@@ -20,7 +20,7 @@ export interface SourceRef {
   ref?: string;
   /** original：一句话灵感 / 题材输入 */
   inspiration?: string;
-  /** text_import / comic_import：原始文本 */
+  /** text_import：原始文本 */
   rawText?: string;
 }
 

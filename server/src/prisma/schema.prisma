@@ -3835,7 +3835,7 @@ model DramaBatchJob {
 model ComicProject {
   id          String   @id @default(cuid())
   title       String
-  // novel_import | original | text_import | comic_import
+  // novel_import | original | text_import
   sourceType  String   @default("original")
   // 软引用：novel_import 时为 novelId，不建外键，保证可拆分
   sourceRef   String?
