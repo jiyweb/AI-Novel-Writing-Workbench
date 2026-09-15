@@ -8,8 +8,10 @@ import {
   getProject,
   getSettings,
   listChapters,
+  listCharacters,
   listPanels,
   listProjects,
+  listScenes,
 } from "../db/comicDb";
 import { getAiSettings } from "../services/ai/aiConfigService";
 import type { AiConnectionSettings, WorkbenchSettings } from "../types";
@@ -20,6 +22,8 @@ export const comicKeys = {
   chapters: (projectId: string) => ["comic-workbench", "chapters", projectId] as const,
   chapter: (chapterId: string) => ["comic-workbench", "chapter", chapterId] as const,
   panels: (chapterId: string) => ["comic-workbench", "panels", chapterId] as const,
+  characters: (projectId: string) => ["comic-workbench", "characters", projectId] as const,
+  scenes: (projectId: string) => ["comic-workbench", "scenes", projectId] as const,
   aiSettings: ["comic-workbench", "aiSettings"] as const,
   settings: ["comic-workbench", "settings"] as const,
 };
@@ -57,6 +61,24 @@ export function useComicPanels(chapterId: string | null | undefined) {
     queryKey: comicKeys.panels(chapterId ?? "none"),
     queryFn: () => (chapterId ? listPanels(chapterId) : Promise.resolve([])),
     enabled: Boolean(chapterId),
+  });
+}
+
+/** 项目级角色库（跨章节共享） */
+export function useComicCharacters(projectId: string | null | undefined) {
+  return useQuery({
+    queryKey: comicKeys.characters(projectId ?? "none"),
+    queryFn: () => (projectId ? listCharacters(projectId) : Promise.resolve([])),
+    enabled: Boolean(projectId),
+  });
+}
+
+/** 项目级场景库（跨章节共享） */
+export function useComicScenes(projectId: string | null | undefined) {
+  return useQuery({
+    queryKey: comicKeys.scenes(projectId ?? "none"),
+    queryFn: () => (projectId ? listScenes(projectId) : Promise.resolve([])),
+    enabled: Boolean(projectId),
   });
 }
 

@@ -383,6 +383,8 @@ export interface ComicScene {
   /** 动态参数默认值，分镜可覆盖 */
   dynamic: SceneDynamicParams;
   promptFragment: string;
+  /** 合并前的同名场景 id 记录 */
+  mergedFrom?: string[];
   updatedAt: string;
 }
 

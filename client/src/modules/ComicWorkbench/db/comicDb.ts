@@ -347,6 +347,17 @@ export async function getImageBlob(id: string): Promise<Blob | undefined> {
   return get<Blob>(ComicDbKeys.image(id));
 }
 
+/** 删除单条图片记录及其 blob（替换参考图时清理旧图） */
+export async function deleteImageRecord(imageRecordId: string, projectId: string): Promise<void> {
+  await del(ComicDbKeys.imageRecord(imageRecordId));
+  await del(ComicDbKeys.image(imageRecordId));
+  const ids = (await get<string[]>(ComicDbKeys.imageRecordIndexOfProject(projectId))) ?? [];
+  await set(
+    ComicDbKeys.imageRecordIndexOfProject(projectId),
+    ids.filter((id) => id !== imageRecordId),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 生成任务
 // ---------------------------------------------------------------------------
