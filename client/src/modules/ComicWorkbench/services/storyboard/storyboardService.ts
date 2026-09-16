@@ -171,7 +171,7 @@ export async function generateStoryboardLlm(chapter: ComicChapter): Promise<Comi
       user: buildGroupUserPrompt(batch),
       schema: groupSchema,
       temperature: 0.2,
-      label: "storyboard_group",
+      label: "智能分镜规划",
     });
     const covered = validateGroupCoverage(result.groups, batch.length);
     for (const indexes of covered) {

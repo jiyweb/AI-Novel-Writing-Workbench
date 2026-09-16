@@ -160,6 +160,42 @@ export interface ShotDensityConfig {
   dynamicDensity: DynamicDensityConfig;
 }
 
+/** 导入预处理规则 —— config/chapterPatterns.json */
+export interface ChapterPatternsConfig {
+  /** 章节号标题（第X章 / 第十二回 / Chapter 1） */
+  chapterHeadingPatterns: string[];
+  /** 剧情性特殊章名（序章/楔子/番外等，视为正文章节） */
+  storyHeadingPatterns: string[];
+  /** 非正文块标题（前言/导语/简介等，默认跳过分镜） */
+  frontMatterHeadingPatterns: string[];
+  /** 作者话标题（作者的话/感言/公告等，默认跳过分镜） */
+  authorNoteHeadingPatterns: string[];
+  /** 标题行最大长度（超过则视为正文） */
+  headingMaxChars: number;
+  /** 章号后标题部分的最大长度 */
+  headingTitleMaxChars: number;
+  /** 章号后无分隔符直接接文字时，允许的标题最大长度 */
+  headingTightTitleMaxChars: number;
+  /** 无分隔符标题不允许以这些虚词开头（正文续写的典型特征） */
+  headingTightTitleForbiddenStarts: string;
+  /** 标题行不允许出现的句读字符 */
+  headingPunctuationForbidden: string;
+  /** 纯数字章节号（如单独一行「12」） */
+  pureNumberHeadingPattern: string;
+  pureNumberMaxChars: number;
+  /** 非正文块标题行最大长度 */
+  frontMatterHeadingMaxChars: number;
+  /** 非正文块最大字符数（超过则视为正文，防误判整章） */
+  frontMatterMaxChars: number;
+  /** 广告/推广行（命中且行长 ≤ junkLineMaxChars 时删除） */
+  junkLinePatterns: string[];
+  junkLineMaxChars: number;
+  /** 纯装饰分隔线行（删除） */
+  separatorLinePattern: string;
+  /** 不可见字符（正文中的零宽字符等，静默清除） */
+  invisibleCharPattern: string;
+}
+
 /** 描述词公式段顺序与模板 —— config/promptFormula.json */
 export interface PromptFormulaConfig {
   /** 段落拼接顺序，键与 PromptSegments 对齐 */
@@ -340,6 +376,15 @@ export interface ComicProject {
   updatedAt: string;
 }
 
+/** 导入时识别的非正文块（前言/导语/作者的话等）：内容完整保留，但不参与分镜 */
+export interface ChapterAnnotation {
+  id: string;
+  kind: "frontMatter" | "authorNote";
+  /** 块标题（如「前言」「作者的话」） */
+  title: string;
+  content: string;
+}
+
 /** 章节（一个项目多章节，共享角色库/场景库） */
 export interface ComicChapter {
   id: string;
@@ -353,6 +398,8 @@ export interface ComicChapter {
    * 分镜/台词仅通过 startIndex/endIndex 引用，绝不改写此字段。
    */
   sourceContent: string;
+  /** 非正文块（前言/作者的话等），导入时识别并单独存放，不参与分镜 */
+  annotations?: ChapterAnnotation[];
   /** 原文字符数（冗余存储便于列表展示与校验） */
   sourceCharCount: number;
   /** 灵感导入时的参数与产出记录 */
@@ -379,6 +426,30 @@ export interface SceneDynamicParams {
   lighting: string;
 }
 
+/**
+ * 人物设计图视图：4 全身转向 + 3 面部特写。
+ * 同一角色固定 7 张设定图，供分镜生图时保持人物一致性参考。
+ */
+export type CharacterDesignView =
+  | "full_front"
+  | "full_three_quarter"
+  | "full_side"
+  | "full_back"
+  | "face_front"
+  | "face_three_quarter"
+  | "face_side";
+
+/** 人物设计图集合（值为图片 blob 记录 id，缺省表示该视图尚未生成） */
+export interface CharacterDesignImages {
+  full_front?: string;
+  full_three_quarter?: string;
+  full_side?: string;
+  full_back?: string;
+  face_front?: string;
+  face_three_quarter?: string;
+  face_side?: string;
+}
+
 /** 角色卡 */
 export interface ComicCharacter {
   id: string;
@@ -388,12 +459,18 @@ export interface ComicCharacter {
   appearance: string;
   clothing: string;
   features: string;
+  /** 主色调/色板（锁定角色用色，设计图与分镜描述词引用） */
+  palette?: string;
   /** 描述词片段（由设定组装，可手动编辑） */
   promptFragment: string;
   /** 正面参考图 blob id */
   frontImageId?: string;
   /** 侧面参考图 blob id */
   sideImageId?: string;
+  /** 人物设计图（7 视图） */
+  designImages?: CharacterDesignImages;
+  /** 生成设计图时的设定快照（promptFragment），设定变更后提示重新生成 */
+  designBasisStamp?: string;
   /** 合并前的同名角色 id 记录 */
   mergedFrom?: string[];
   updatedAt: string;
@@ -411,6 +488,10 @@ export interface ComicScene {
   /** 动态参数默认值，分镜可覆盖 */
   dynamic: SceneDynamicParams;
   promptFragment: string;
+  /** 场景概念图 blob 记录 id */
+  imageId?: string;
+  /** 生成场景图时的设定快照（promptFragment），设定变更后提示重新生成 */
+  imageBasisStamp?: string;
   /** 合并前的同名场景 id 记录 */
   mergedFrom?: string[];
   updatedAt: string;
@@ -429,8 +510,13 @@ export interface DialogueLayout {
 }
 
 /** 分镜台词（原文只读，引用索引） */
+/** 台词类型：对白（角色说的话）/ 旁白（画外音叙事）/ 内心独白 */
+export type DialogueKind = "dialogue" | "narration" | "inner";
+
 export interface PanelDialogue {
   id: string;
+  /** 台词类型；旧数据缺省视为对白 */
+  kind?: DialogueKind;
   /** 匹配到的角色 id（可能为空=未识别） */
   characterId?: string;
   characterName: string;

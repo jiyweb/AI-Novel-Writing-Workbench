@@ -155,6 +155,16 @@ export async function getImageTask(taskId: string) {
   return data;
 }
 
+/** 取消排队中/运行中的生图任务；已终态任务由服务端拒绝，调用方自行静默处理 */
+export async function cancelImageTask(taskId: string) {
+  const { data } = await apiClient.post<ApiResponse<ImageGenerationTask>>(
+    `/images/tasks/${taskId}/cancel`,
+    undefined,
+    { silentErrorStatuses: [400, 404, 409] },
+  );
+  return data;
+}
+
 export async function listImageAssets(params: { sceneType: Extract<ImageSceneType, "character" | "novel_cover" | "book_analysis_character">; sceneId: string }) {
   const { data } = await apiClient.get<ApiResponse<ImageAsset[]>>("/images/assets", {
     params,

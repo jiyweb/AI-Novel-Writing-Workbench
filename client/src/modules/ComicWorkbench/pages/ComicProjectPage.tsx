@@ -8,10 +8,12 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import LiveExecutionDialog from "@/components/liveExecution/LiveExecutionDialog";
 import { cn } from "@/lib/utils";
 import { getFormById, getStylePresetById } from "../services/configService";
 import { getProject } from "../db/comicDb";
 import { WORKBENCH_STEPS, useComicWorkbenchStore } from "../stores/workbenchStore";
+import { useWorkbenchSettings } from "../hooks/useComicQuery";
 import { StepNavFooter } from "../components/common/StepNavFooter";
 import { ImportStepPanel } from "../components/steps/ImportStepPanel";
 import { FormStyleStepPanel } from "../components/steps/FormStyleStepPanel";
@@ -49,9 +51,18 @@ export default function ComicProjectPage() {
     enabled: Boolean(projectId),
   });
   const project = projectQuery.data;
+  // 个人画风列表：头部徽标需要按 id 显示个人风格名称
+  const settingsQuery = useWorkbenchSettings();
 
   const form = useMemo(() => (project ? getFormById(project.formId) : undefined), [project]);
-  const style = useMemo(() => (project ? getStylePresetById(project.stylePresetId) : undefined), [project]);
+  const style = useMemo(
+    () =>
+      project
+        ? getStylePresetById(project.stylePresetId) ??
+          settingsQuery.data?.customStylePresets.find((item) => item.id === project.stylePresetId)
+        : undefined,
+    [project, settingsQuery.data],
+  );
 
   if (!projectId) {
     return <MissingProject />;
@@ -64,7 +75,7 @@ export default function ComicProjectPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-7xl flex-col px-4 py-6">
+    <div className="mx-auto flex h-full w-full max-w-7xl flex-col px-4 py-4">
       {/* 头部：返回 + 项目信息 */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -81,10 +92,12 @@ export default function ComicProjectPage() {
             </div>
           </div>
         </div>
+        {/* AI 实况：查看当前项目触发的所有 AI 调用过程 */}
+        <LiveExecutionDialog />
       </header>
 
       {/* 步骤导航 */}
-      <nav className="mt-5 flex flex-wrap items-center gap-1 border-b pb-3">
+      <nav className="mt-3 flex flex-wrap items-center gap-1 border-b pb-2">
         {WORKBENCH_STEPS.map((item, index) => (
           <button
             key={item.id}
@@ -104,7 +117,7 @@ export default function ComicProjectPage() {
       </nav>
 
       {/* 步骤面板 */}
-      <div className="flex min-h-0 flex-1 flex-col pt-5">
+      <div className="flex min-h-0 flex-1 flex-col pt-3">
         <StepBody step={step} projectId={projectId} onReadyChange={handleReadyChange} />
       </div>
 

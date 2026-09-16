@@ -263,6 +263,20 @@ router.get("/tasks/:taskId/assets", validate({ params: taskParamsSchema }), asyn
   }
 });
 
+router.post("/tasks/:taskId/cancel", validate({ params: taskParamsSchema }), async (req, res, next) => {
+  try {
+    const { taskId } = req.params as z.infer<typeof taskParamsSchema>;
+    const data = await imageGenerationService.cancelTask(taskId);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "Task cancelled.",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/assets", validate({ query: assetQuerySchema }), async (req, res, next) => {
   try {
     const query = req.query as z.infer<typeof assetQuerySchema>;

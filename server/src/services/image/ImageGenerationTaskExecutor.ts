@@ -1,6 +1,7 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
+import { llmLiveBroker } from "../../platform/llm/live/LlmLiveBroker";
 import { generateImagesByProvider } from "./provider";
 import {
   persistGeneratedImageAsset,
@@ -301,6 +302,17 @@ export async function executeImageGenerationTask(
     },
   });
 
+  // 生图任务写入 AI 实况（mode=image），taskId 与任务对齐，实况面板可直接看到生成过程
+  const liveSession = llmLiveBroker.begin({
+    label: `生图 · ${currentItemLabel}`,
+    mode: "image",
+    taskId: task.id,
+    provider: task.provider,
+    model: task.model,
+    promptText: task.prompt.length > 2000 ? `${task.prompt.slice(0, 2000)}…` : task.prompt,
+  });
+  liveSession.phase("requesting", "正在提交生图任务");
+
   try {
     await ensureNotCancelled(task.id);
     await prisma.imageGenerationTask.update({
@@ -312,6 +324,7 @@ export async function executeImageGenerationTask(
         currentItemLabel,
       },
     });
+    liveSession.phase("streaming", "模型正在生成图片");
 
     const referenceImages = await resolveReferenceImagesForTask(task);
     const result = await generateImagesByProvider({
@@ -336,6 +349,7 @@ export async function executeImageGenerationTask(
         currentStage: "saving_assets",
       },
     });
+    liveSession.phase("persisting", "图片生成完成，正在保存资产");
 
     const persistedImages: Array<{
       image: (typeof result.images)[number];
@@ -436,9 +450,11 @@ export async function executeImageGenerationTask(
         },
       });
     });
+    liveSession.complete();
   } catch (error) {
     if (error instanceof AppError && error.message === "IMAGE_TASK_CANCELLED") {
       await markCancelled(task.id, task.progress);
+      liveSession.phase("cancelled", "生图任务已取消");
       return;
     }
     const errorMessage = normalizeImageGenerationError(error);
@@ -459,6 +475,7 @@ export async function executeImageGenerationTask(
           cancelRequestedAt: null,
         },
       });
+      liveSession.fail(`生成失败，将自动重试：${errorMessage}`);
       setTimeout(() => input.requeueTask(task.id), 1500);
       return;
     }
@@ -477,5 +494,6 @@ export async function executeImageGenerationTask(
       },
     });
     await cleanupOrphanAppearanceImages(task.id);
+    liveSession.fail(errorMessage);
   }
 }

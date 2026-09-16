@@ -14,6 +14,7 @@ import {
   listScenes,
 } from "../db/comicDb";
 import { fetchMainAiStatus, getAiSettings } from "../services/ai/aiConfigService";
+import { registerCustomStylePresets } from "../services/configService";
 import { loadMarketingCopy } from "../services/marketingService";
 import type { WorkbenchSettings } from "../types";
 
@@ -122,7 +123,12 @@ export function useMarketingCopy(
 export function useWorkbenchSettings() {
   return useQuery({
     queryKey: comicKeys.settings,
-    queryFn: getSettings,
+    queryFn: async () => {
+      const settings = await getSettings();
+      // 登记个人画风，保证 getStylePresetById 等同步查询可命中个人风格
+      registerCustomStylePresets(settings.customStylePresets);
+      return settings;
+    },
   });
 }
 

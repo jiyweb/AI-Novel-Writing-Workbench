@@ -13,9 +13,12 @@ import promptFormulaJson from "../config/promptFormula.json";
 import aiProvidersJson from "../config/aiProviders.json";
 import narrativeTemplatesJson from "../config/narrativeTemplates.json";
 import sensitiveWordsJson from "../config/sensitiveWords.json";
+import chapterPatternsJson from "../config/chapterPatterns.json";
 import type {
   AiProvidersConfig,
+  ChapterPatternsConfig,
   ComicFormConfig,
+  CustomStylePreset,
   NarrativeTemplatesConfig,
   PromptFormulaConfig,
   ShotDensityConfig,
@@ -149,6 +152,26 @@ const sensitiveWordsSchema = z.object({
   words: z.array(z.string()),
 });
 
+const chapterPatternsSchema = z.object({
+  chapterHeadingPatterns: z.array(z.string()).min(1),
+  storyHeadingPatterns: z.array(z.string()),
+  frontMatterHeadingPatterns: z.array(z.string()),
+  authorNoteHeadingPatterns: z.array(z.string()),
+  headingMaxChars: z.number().int().positive(),
+  headingTitleMaxChars: z.number().int().positive(),
+  headingTightTitleMaxChars: z.number().int().positive(),
+  headingTightTitleForbiddenStarts: z.string().min(1),
+  headingPunctuationForbidden: z.string().min(1),
+  pureNumberHeadingPattern: z.string().min(1),
+  pureNumberMaxChars: z.number().int().positive(),
+  frontMatterHeadingMaxChars: z.number().int().positive(),
+  frontMatterMaxChars: z.number().int().positive(),
+  junkLinePatterns: z.array(z.string()),
+  junkLineMaxChars: z.number().int().positive(),
+  separatorLinePattern: z.string().min(1),
+  invisibleCharPattern: z.string().min(1),
+});
+
 // ---------------------------------------------------------------------------
 // 解析与导出（模块加载时执行一次；JSON 校验失败会抛出带文件名的错误）
 // ---------------------------------------------------------------------------
@@ -207,6 +230,12 @@ export const sensitiveWords: SensitiveWordsConfig = parseConfig(
   sensitiveWordsJson,
 );
 
+export const chapterPatterns: ChapterPatternsConfig = parseConfig(
+  "chapterPatterns.json",
+  chapterPatternsSchema,
+  chapterPatternsJson,
+);
+
 // ---------------------------------------------------------------------------
 // 便捷查询
 // ---------------------------------------------------------------------------
@@ -215,8 +244,20 @@ export function getFormById(id: string): ComicFormConfig | undefined {
   return comicForms.find((form) => form.id === id);
 }
 
+// 个人画风注册表：IndexedDB 里的个人风格加载后登记到内存，
+// 使 getStylePresetById 等同步查询也能命中个人风格（否则下游只能解析内置预设）
+let customStylePresetRegistry: CustomStylePreset[] = [];
+
+/** 登记个人画风列表（设置加载 / 个人风格增删时调用） */
+export function registerCustomStylePresets(list: CustomStylePreset[]): void {
+  customStylePresetRegistry = list;
+}
+
 export function getStylePresetById(id: string): StylePresetConfig | undefined {
-  return stylePresets.find((preset) => preset.id === id);
+  return (
+    stylePresets.find((preset) => preset.id === id) ??
+    customStylePresetRegistry.find((preset) => preset.id === id)
+  );
 }
 
 export function getDensityLevel(id: string) {

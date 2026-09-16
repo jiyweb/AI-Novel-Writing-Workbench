@@ -103,7 +103,7 @@ export async function generateMarketingCopy(
     schema: marketingSchema,
     timeoutMs: defaults.llmTimeoutMs,
     signal,
-    label: "marketing_copy",
+    label: "营销文案生成",
   });
 
   const copy: MarketingCopy = {

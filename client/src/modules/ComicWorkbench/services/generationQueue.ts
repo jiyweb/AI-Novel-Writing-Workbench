@@ -269,8 +269,14 @@ async function runSingleTask(
   const pixel =
     task.mode === "draft" ? form?.draftPixel : (form?.referencePixel ?? form?.draftPixel);
 
-  // 描述词兜底：缺失时按公式现场组装（不标记手动），并按当前上游版本盖章
-  if (!panel.prompt?.final) {
+  // 描述词兜底：缺失，或表现层版本过期（如切换台词绘制开关后画面尚未重组）时按公式重组；
+  // 手动描述词不自动覆盖。重组后按当前上游版本盖章
+  const promptBasis = panel.promptBasis;
+  const presentationDrift =
+    promptBasis != null &&
+    promptBasis.presentation !== params.chapter.versions.presentation &&
+    panel.prompt?.manualOverride !== true;
+  if (!panel.prompt?.final || presentationDrift) {
     panel.prompt = buildPanelPrompt({
       chapter: params.chapter,
       panel,

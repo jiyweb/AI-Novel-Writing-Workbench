@@ -41,6 +41,7 @@ import {
   defaultDialogueLayout,
   deleteDialogue,
   extractDialogues,
+  kindAwareLayout,
   updateDialogue,
 } from "../../services/dialogueService";
 import { computePanelStaleMap, syncChapterText } from "../../services/syncService";
@@ -50,6 +51,7 @@ import type {
   ComicCharacter,
   ComicLetteringMode,
   ComicPanel,
+  DialogueKind,
   DialogueLayout,
   PanelDialogue,
 } from "../../types";
@@ -160,12 +162,18 @@ export function DialogueStepPanel(props: { projectId: string; onReadyChange?: (r
       return extractDialogues(
         structuredClone(chapter),
         panels.map((panel) => structuredClone(panel)),
+        { letteringMode },
       );
     },
     onSuccess: async (result) => {
-      toast.success(
-        `台词提取完成：${result.panelsWithDialogue} 个分镜共 ${result.totalDialogues} 条台词`,
-      );
+      const parts = [
+        `台词提取完成：${result.panelsWithDialogue}/${panels.length} 镜共 ${result.totalDialogues} 条`,
+      ];
+      if (result.narrationCount > 0) parts.push(`旁白 ${result.narrationCount}`);
+      if (result.innerCount > 0) parts.push(`内心 ${result.innerCount}`);
+      if (result.fallbackFilled > 0) parts.push(`${result.fallbackFilled} 镜由旁白补写`);
+      if (!result.aiUsed) parts.push("（AI 未就绪，使用引号扫描）");
+      toast.success(parts.join("，"));
       await invalidate();
     },
     onError: (error: Error) => toast.error(`台词提取失败：${error.message}`),
@@ -270,10 +278,10 @@ export function DialogueStepPanel(props: { projectId: string; onReadyChange?: (r
           ) : (
             <Sparkles className="mr-1.5 h-4 w-4" />
           )}
-          {chapter.dialogueExtracted ? "重新提取台词" : "提取台词"}
+          {chapter.dialogueExtracted ? "AI 重新提取台词" : "AI 提取台词"}
         </Button>
         <span className="text-xs text-muted-foreground">
-          共 {panels.length} 镜 · {totalDialogues} 条台词
+          共 {panels.length} 镜 · {totalDialogues} 条文字（对白/旁白/内心，每镜至少 1 条）
         </span>
         {letteringMode === "none" ? (
           <span className="text-xs text-muted-foreground">
@@ -380,14 +388,16 @@ export function DialogueStepPanel(props: { projectId: string; onReadyChange?: (r
               {/* 台词条目编辑 */}
               {selectedPanel.dialogues.length === 0 ? (
                 <p className="py-4 text-center text-xs text-muted-foreground">
-                  本镜暂无台词。可点击「添加台词」补画外音/旁白，或回到分镜调整原文切分。
+                  本镜暂无文字。可点击「添加对白/旁白/内心」补充，或用 AI 提取台词。
                 </p>
               ) : (
                 <div className="flex flex-col gap-1">
-                  {selectedPanel.dialogues.map((dialogue) => (
+                  {selectedPanel.dialogues.map((dialogue, index) => (
                     <DialogueRow
                       key={dialogue.id}
                       dialogue={dialogue}
+                      dialogueIndex={index}
+                      letteringMode={letteringMode}
                       characters={characters}
                       isActive={dialogue.id === selectedDialogueId}
                       onSelect={() => setSelectedDialogueId(dialogue.id)}
@@ -404,18 +414,48 @@ export function DialogueStepPanel(props: { projectId: string; onReadyChange?: (r
                 </div>
               )}
 
-              <Button
-                size="sm"
-                variant="outline"
-                className="self-start"
-                disabled={busy}
-                onClick={() =>
-                  dialogueMutation.mutate(() => addManualDialogue(selectedPanel, letteringMode))
-                }
-              >
-                <Plus className="mr-1.5 h-4 w-4" />
-                添加台词
-              </Button>
+              {/* 手动补文字：对白 / 旁白 / 内心 */}
+              <div className="flex flex-wrap gap-2 self-start">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    dialogueMutation.mutate(() =>
+                      addManualDialogue(selectedPanel, letteringMode, "dialogue"),
+                    )
+                  }
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  添加对白
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    dialogueMutation.mutate(() =>
+                      addManualDialogue(selectedPanel, letteringMode, "narration"),
+                    )
+                  }
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  添加旁白
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    dialogueMutation.mutate(() =>
+                      addManualDialogue(selectedPanel, letteringMode, "inner"),
+                    )
+                  }
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  添加内心
+                </Button>
+              </div>
             </>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
@@ -545,6 +585,13 @@ function DialogueStage(props: {
         props.panel.dialogues.map((dialogue, index) => {
           const layout = layoutOf(dialogue, index);
           const isActive = dialogue.id === props.selectedDialogueId;
+          // 类型决定外观：旁白字幕条、内心虚线气泡，其余按形态样式
+          const kindClass =
+            dialogue.kind === "narration"
+              ? "rounded bg-black/75 px-2 py-1 text-center text-white"
+              : dialogue.kind === "inner"
+                ? "rounded-2xl border border-dashed bg-background/95 px-2.5 py-1.5 italic shadow-sm"
+                : BUBBLE_CLASS[props.letteringMode];
           return (
             <div
               key={dialogue.id}
@@ -553,7 +600,7 @@ function DialogueStage(props: {
               onPointerUp={handlePointerUp}
               className={cn(
                 "absolute min-h-6 cursor-grab touch-none select-none leading-snug active:cursor-grabbing",
-                BUBBLE_CLASS[props.letteringMode],
+                kindClass,
                 isActive && "ring-2 ring-primary/60",
               )}
               style={{
@@ -587,19 +634,28 @@ const BUBBLE_CLASS: Record<ComicLetteringMode, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// 台词条目（说话人 + 文本）
+// 台词条目（类型 + 说话人 + 文本）
 // ---------------------------------------------------------------------------
+
+export const DIALOGUE_KIND_LABELS: Record<DialogueKind, string> = {
+  dialogue: "对白",
+  narration: "旁白",
+  inner: "内心",
+};
 
 function DialogueRow(props: {
   dialogue: PanelDialogue;
+  dialogueIndex: number;
+  letteringMode: ComicLetteringMode;
   characters: ComicCharacter[];
   isActive: boolean;
   onSelect: () => void;
-  onCommit: (updates: Partial<Pick<PanelDialogue, "text" | "characterId" | "characterName">>) => void;
+  onCommit: (updates: Partial<Pick<PanelDialogue, "text" | "kind" | "characterId" | "characterName" | "layout">>) => void;
   onDelete: () => void;
 }) {
   const [name, setName] = useState(props.dialogue.characterName);
   const [text, setText] = useState(props.dialogue.text);
+  const kind = props.dialogue.kind ?? "dialogue";
 
   const commitName = () => {
     const trimmed = name.trim();
@@ -611,6 +667,14 @@ function DialogueRow(props: {
     if (text === props.dialogue.text) return;
     props.onCommit({ text });
   };
+  const commitKind = (next: DialogueKind) => {
+    if (next === kind) return;
+    props.onCommit({
+      kind: next,
+      // 类型切换后按类型重置默认布局（旁白字幕式/内心右侧）
+      layout: kindAwareLayout(next, props.dialogueIndex, props.letteringMode),
+    });
+  };
 
   return (
     <div
@@ -621,22 +685,37 @@ function DialogueRow(props: {
       )}
     >
       <div className="flex items-center gap-2">
+        <select
+          value={kind}
+          onChange={(event) => commitKind(event.target.value as DialogueKind)}
+          onClick={(event) => event.stopPropagation()}
+          className="h-8 w-16 shrink-0 rounded border-none bg-transparent text-xs text-muted-foreground outline-none hover:bg-muted"
+        >
+          {(Object.keys(DIALOGUE_KIND_LABELS) as DialogueKind[]).map((value) => (
+            <option key={value} value={value}>
+              {DIALOGUE_KIND_LABELS[value]}
+            </option>
+          ))}
+        </select>
         <Input
           value={name}
           onChange={(event) => setName(event.target.value)}
           onBlur={commitName}
           onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
-          placeholder="说话人（留空为旁白）"
+          placeholder={kind === "narration" ? "旁白无需说话人" : "说话人（留空为旁白）"}
+          disabled={kind === "narration"}
           list="comic-dlg-name-options"
           onClick={(event) => event.stopPropagation()}
-          className="h-8 w-32 shrink-0 text-xs"
+          className="h-8 w-28 shrink-0 text-xs disabled:opacity-50"
         />
         <Input
           value={text}
           onChange={(event) => setText(event.target.value)}
           onBlur={commitText}
           onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
-          placeholder="台词内容（提取自原文，可修改）"
+          placeholder={
+            kind === "narration" ? "旁白内容（交代场景/动作/时间）" : kind === "inner" ? "内心独白（角色心理活动）" : "台词内容（提取自原文，可修改）"
+          }
           onClick={(event) => event.stopPropagation()}
           className="h-8 min-w-0 flex-1 text-xs"
         />

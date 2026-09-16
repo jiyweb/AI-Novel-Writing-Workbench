@@ -13,7 +13,7 @@ import {
   saveProject,
   saveChapter,
 } from "../db/comicDb";
-import { comicForms, stylePresets } from "./configService";
+import { comicForms, getStylePresetById, stylePresets } from "./configService";
 import type { ComicFormConfig, ComicProject, StyleAdjustments } from "../types";
 
 function defaultAdjustments(formIndex = 0, presetIndex = 0): StyleAdjustments {
@@ -108,7 +108,7 @@ export async function changeProjectStyle(
   },
 ): Promise<ComicProject> {
   const preset = updates.stylePresetId
-    ? stylePresets.find((p) => p.id === updates.stylePresetId)
+    ? getStylePresetById(updates.stylePresetId)
     : undefined;
   const next: ComicProject = {
     ...project,

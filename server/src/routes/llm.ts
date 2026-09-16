@@ -215,7 +215,7 @@ router.post(
         temperature: body.temperature,
         maxTokens: body.maxTokens,
         taskType: (body.taskType ?? "chat") as TaskType,
-        label: `comic_workbench:${body.label ?? "invoke"}`,
+        label: body.label ?? "模型直连调用",
       });
       res.status(200).json({
         success: true,

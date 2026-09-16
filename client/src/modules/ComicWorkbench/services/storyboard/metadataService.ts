@@ -106,7 +106,7 @@ export async function enrichPanelMetadata(params: EnrichMetadataParams): Promise
       schema: batchSchema,
       signal,
       temperature: 0.3,
-      label: "panel_metadata",
+      label: "分镜元数据补全",
     });
 
     const byIndex = new Map(result.panels.map((item) => [item.index, item]));

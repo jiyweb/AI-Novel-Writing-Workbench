@@ -11,6 +11,7 @@
  */
 import { extractDialogues } from "./dialogueService";
 import { generateChapterPrompts } from "./promptEngine";
+import { getFormById } from "./configService";
 import type {
   ComicChapter,
   ComicCharacter,
@@ -153,7 +154,8 @@ export async function syncChapterText(
 
   let reExtractedDialogues = false;
   if (before.dialogue > 0) {
-    await extractDialogues(chapter, panels);
+    const form = getFormById(params.project.formId);
+    await extractDialogues(chapter, panels, { letteringMode: form?.letteringMode ?? "bubble" });
     reExtractedDialogues = true;
     params.onStageProgress?.("dialogue", panels.length, panels.length);
   }

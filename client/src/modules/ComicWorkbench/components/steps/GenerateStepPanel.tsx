@@ -263,15 +263,20 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
     abortRef.current?.abort();
   };
 
-  // 台词绘制开关：只改章节开关字段，画面需重绘后才带台词文字
+  // 台词绘制开关：推进表现层版本，已有画面自动标记待更新；重绘时描述词按新开关重组，画面重绘后带台词文字
   const toggleLetteringEmbed = async (checked: boolean) => {
     if (!chapter) return;
-    await saveChapter({ ...chapter, letteringEmbed: checked, updatedAt: new Date().toISOString() });
+    await saveChapter({
+      ...chapter,
+      letteringEmbed: checked,
+      versions: { ...chapter.versions, presentation: chapter.versions.presentation + 1 },
+      updatedAt: new Date().toISOString(),
+    });
     await invalidate();
     toast.success(
       checked
-        ? "已开启台词绘制，重新生成画面后台词会直接绘入图中"
-        : "已关闭台词绘制，重新生成画面后仅保留气泡位置提示",
+        ? "已开启台词绘制：已有画面已标记待更新，重新生成后台词会直接绘入图中"
+        : "已关闭台词绘制：已有画面已标记待更新，重新生成后仅保留气泡位置提示",
     );
   };
 

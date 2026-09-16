@@ -131,7 +131,12 @@ export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (
   };
 
   const form = project ? comicForms.find((f) => f.id === project.formId) : undefined;
-  const preset = project ? getStylePresetById(project.stylePresetId) ?? stylePresets[0] : undefined;
+  // 当前生效画风：内置 → 个人风格 → 兜底第一个内置（未知 id 的历史项目）
+  const preset = project
+    ? getStylePresetById(project.stylePresetId) ??
+      customPresets.find((item) => item.id === project.stylePresetId) ??
+      stylePresets[0]
+    : undefined;
 
   const affectedChapterCount = chapters.filter(
     (c) => c.panelOrder.length > 0 || c.versions.storyboard > 0,
@@ -376,9 +381,8 @@ export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (
             );
           })}
           {customPresets.map((item) => {
-            const selected =
-              item.basePresetId === project.stylePresetId &&
-              item.customKeywords === project.customStyleKeywords;
+            // 个人风格是独立画风：选中态按自身 id 判定，与内置风格互斥
+            const selected = item.id === project.stylePresetId;
             return (
               <div
                 key={item.id}
@@ -394,7 +398,7 @@ export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (
                   className="block w-full text-left"
                   onClick={() =>
                     styleMutation.mutate({
-                      stylePresetId: item.basePresetId,
+                      stylePresetId: item.id,
                       styleAdjustments: item.adjustments,
                       customStyleKeywords: item.customKeywords,
                     })

@@ -208,6 +208,8 @@ export async function createChapter(params: {
   sourceType: ComicChapter["sourceType"];
   sourceContent: string;
   inspiration?: ComicChapter["inspiration"];
+  /** 非正文块（前言/作者的话等），导入预处理识别后传入 */
+  annotations?: ComicChapter["annotations"];
 }): Promise<ComicChapter> {
   const now = new Date().toISOString();
   const chapter: ComicChapter = {
@@ -217,6 +219,7 @@ export async function createChapter(params: {
     index: params.index,
     sourceType: params.sourceType,
     sourceContent: params.sourceContent,
+    annotations: params.annotations ?? [],
     sourceCharCount: params.sourceContent.length,
     inspiration: params.inspiration,
     createdAt: now,
@@ -248,41 +251,46 @@ export async function getPanel(id: string): Promise<ComicPanel | undefined> {
 }
 
 export async function savePanel(panel: ComicPanel): Promise<void> {
-  const ids = (await get<string[]>(ComicDbKeys.panelIndexOfChapter(panel.chapterId))) ?? [];
-  if (!ids.includes(panel.id)) {
-    await set(ComicDbKeys.panelIndexOfChapter(panel.chapterId), [...ids, panel.id]);
-  }
+  await withPanelIndexLock(async () => {
+    const ids = (await get<string[]>(ComicDbKeys.panelIndexOfChapter(panel.chapterId))) ?? [];
+    if (!ids.includes(panel.id)) {
+      await set(ComicDbKeys.panelIndexOfChapter(panel.chapterId), [...ids, panel.id]);
+    }
+  });
   await set(ComicDbKeys.panel(panel.id), panel);
 }
 
 export async function savePanels(panels: ComicPanel[]): Promise<void> {
-  // 面板本体键相互独立，可并发写；章节索引必须串行合并——
-  // 若并发执行"读索引-追加-写回"，会互相覆盖导致索引只剩最后一镜
+  // 面板本体键相互独立，可并发写；章节索引必须经互斥链串行合并
   await Promise.all(panels.map((panel) => set(ComicDbKeys.panel(panel.id), panel)));
   const chapterIds = [...new Set(panels.map((panel) => panel.chapterId))];
-  for (const chapterId of chapterIds) {
-    const indexKey = ComicDbKeys.panelIndexOfChapter(chapterId);
-    const ids = (await get<string[]>(indexKey)) ?? [];
-    const incoming = panels
-      .filter((panel) => panel.chapterId === chapterId)
-      .map((panel) => panel.id);
-    const merged = [...ids];
-    for (const id of incoming) {
-      if (!merged.includes(id)) merged.push(id);
+  await withPanelIndexLock(async () => {
+    for (const chapterId of chapterIds) {
+      const indexKey = ComicDbKeys.panelIndexOfChapter(chapterId);
+      const ids = (await get<string[]>(indexKey)) ?? [];
+      const incoming = panels
+        .filter((panel) => panel.chapterId === chapterId)
+        .map((panel) => panel.id);
+      const merged = [...ids];
+      for (const id of incoming) {
+        if (!merged.includes(id)) merged.push(id);
+      }
+      await set(indexKey, merged);
     }
-    await set(indexKey, merged);
-  }
+  });
 }
 
 export async function deletePanels(panelIds: string[], chapterId: string): Promise<void> {
   for (const panelId of panelIds) {
     await del(ComicDbKeys.panel(panelId));
   }
-  const ids = (await get<string[]>(ComicDbKeys.panelIndexOfChapter(chapterId))) ?? [];
-  await set(
-    ComicDbKeys.panelIndexOfChapter(chapterId),
-    ids.filter((id) => !panelIds.includes(id)),
-  );
+  await withPanelIndexLock(async () => {
+    const ids = (await get<string[]>(ComicDbKeys.panelIndexOfChapter(chapterId))) ?? [];
+    await set(
+      ComicDbKeys.panelIndexOfChapter(chapterId),
+      ids.filter((id) => !panelIds.includes(id)),
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -296,21 +304,25 @@ export async function listCharacters(projectId: string): Promise<ComicCharacter[
 }
 
 export async function saveCharacter(character: ComicCharacter): Promise<void> {
-  const ids =
-    (await get<string[]>(ComicDbKeys.characterIndexOfProject(character.projectId))) ?? [];
-  if (!ids.includes(character.id)) {
-    await set(ComicDbKeys.characterIndexOfProject(character.projectId), [...ids, character.id]);
-  }
+  await withCastIndexLock(async () => {
+    const ids =
+      (await get<string[]>(ComicDbKeys.characterIndexOfProject(character.projectId))) ?? [];
+    if (!ids.includes(character.id)) {
+      await set(ComicDbKeys.characterIndexOfProject(character.projectId), [...ids, character.id]);
+    }
+  });
   await set(ComicDbKeys.character(character.id), character);
 }
 
 export async function deleteCharacter(id: string, projectId: string): Promise<void> {
   await del(ComicDbKeys.character(id));
-  const ids = (await get<string[]>(ComicDbKeys.characterIndexOfProject(projectId))) ?? [];
-  await set(
-    ComicDbKeys.characterIndexOfProject(projectId),
-    ids.filter((item) => item !== id),
-  );
+  await withCastIndexLock(async () => {
+    const ids = (await get<string[]>(ComicDbKeys.characterIndexOfProject(projectId))) ?? [];
+    await set(
+      ComicDbKeys.characterIndexOfProject(projectId),
+      ids.filter((item) => item !== id),
+    );
+  });
 }
 
 export async function listScenes(projectId: string): Promise<import("../types").ComicScene[]> {
@@ -322,34 +334,45 @@ export async function listScenes(projectId: string): Promise<import("../types").
 }
 
 export async function saveScene(scene: import("../types").ComicScene): Promise<void> {
-  const ids = (await get<string[]>(ComicDbKeys.sceneIndexOfProject(scene.projectId))) ?? [];
-  if (!ids.includes(scene.id)) {
-    await set(ComicDbKeys.sceneIndexOfProject(scene.projectId), [...ids, scene.id]);
-  }
+  await withCastIndexLock(async () => {
+    const ids = (await get<string[]>(ComicDbKeys.sceneIndexOfProject(scene.projectId))) ?? [];
+    if (!ids.includes(scene.id)) {
+      await set(ComicDbKeys.sceneIndexOfProject(scene.projectId), [...ids, scene.id]);
+    }
+  });
   await set(ComicDbKeys.scene(scene.id), scene);
 }
 
 export async function deleteScene(id: string, projectId: string): Promise<void> {
   await del(ComicDbKeys.scene(id));
-  const ids = (await get<string[]>(ComicDbKeys.sceneIndexOfProject(projectId))) ?? [];
-  await set(
-    ComicDbKeys.sceneIndexOfProject(projectId),
-    ids.filter((item) => item !== id),
-  );
+  await withCastIndexLock(async () => {
+    const ids = (await get<string[]>(ComicDbKeys.sceneIndexOfProject(projectId))) ?? [];
+    await set(
+      ComicDbKeys.sceneIndexOfProject(projectId),
+      ids.filter((item) => item !== id),
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
 // 图片 blob
 // ---------------------------------------------------------------------------
 
-// 图片记录索引的串行互斥链：批量并发生图/重绘清理会同时"读索引-改-写回"，
-// 不加锁会互相覆盖导致索引丢项（与 savePanels 同类竞态）
-let imageIndexLock: Promise<unknown> = Promise.resolve();
-function withImageIndexLock<T>(task: () => Promise<T>): Promise<T> {
-  const result = imageIndexLock.then(task);
-  imageIndexLock = result.catch(() => undefined);
-  return result;
+// 索引「读-改-写」互斥链工厂：所有 *_IndexOf* 索引的更新必须串行执行——
+// 并发"读索引-改-写回"会互相覆盖导致索引丢项，表现为「重新进入后数据消失」
+// （分镜/台词/描述词/生成任务在数据键里还在，但章节索引查不到了）
+function createIndexLock() {
+  let lock: Promise<unknown> = Promise.resolve();
+  return function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+    const result = lock.then(task);
+    lock = result.catch(() => undefined);
+    return result;
+  };
 }
+const withPanelIndexLock = createIndexLock();
+const withTaskIndexLock = createIndexLock();
+const withCastIndexLock = createIndexLock();
+const withImageIndexLock = createIndexLock();
 
 export async function saveImageBlob(
   record: Omit<ComicImageRecord, "id" | "createdAt">,
@@ -408,11 +431,13 @@ export async function listGenerationTasks(chapterId: string): Promise<Generation
 }
 
 export async function saveGenerationTask(task: GenerationTask): Promise<void> {
-  const ids =
-    (await get<string[]>(ComicDbKeys.generationTaskIndexOfChapter(task.chapterId))) ?? [];
-  if (!ids.includes(task.id)) {
-    await set(ComicDbKeys.generationTaskIndexOfChapter(task.chapterId), [...ids, task.id]);
-  }
+  await withTaskIndexLock(async () => {
+    const ids =
+      (await get<string[]>(ComicDbKeys.generationTaskIndexOfChapter(task.chapterId))) ?? [];
+    if (!ids.includes(task.id)) {
+      await set(ComicDbKeys.generationTaskIndexOfChapter(task.chapterId), [...ids, task.id]);
+    }
+  });
   await set(ComicDbKeys.generationTask(task.id), task);
 }
 

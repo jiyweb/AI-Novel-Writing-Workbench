@@ -7,7 +7,7 @@
  */
 import type { ApiResponse } from "@ai-novel/shared/types/api";
 import { apiClient } from "@/api/client";
-import { resolveImageAssetUrl } from "@/api/images";
+import { cancelImageTask, resolveImageAssetUrl } from "@/api/images";
 import { AiError } from "./llmClient";
 import { getAiDefaults, resolveImageChoice } from "./aiConfigService";
 import type { ComicImageModelChoice } from "../../types";
@@ -63,22 +63,35 @@ export async function generateImage(
 
   // 轮询直到 succeeded / 失败 / 超时（imagePollMaxMs）
   const deadline = Date.now() + defaults.imagePollMaxMs;
-  for (;;) {
-    await sleep(defaults.imagePollIntervalMs, params.signal);
-    const task = await fetchTask(taskId, params.signal);
-    params.onProgress?.(describeTaskProgress(task));
-    if (task.status === "succeeded") {
-      break;
+  let taskTerminated = false;
+  try {
+    for (;;) {
+      await sleep(defaults.imagePollIntervalMs, params.signal);
+      const task = await fetchTask(taskId, params.signal);
+      params.onProgress?.(describeTaskProgress(task));
+      if (task.status === "succeeded") {
+        taskTerminated = true;
+        break;
+      }
+      if (task.status === "failed") {
+        taskTerminated = true;
+        throw new AiError("http", task.error?.trim() || "生图任务失败，请调整描述词后重试");
+      }
+      if (task.status === "cancelled") {
+        taskTerminated = true;
+        throw new AiError("timeout", "生图任务已取消");
+      }
+      if (Date.now() > deadline) {
+        throw new AiError("timeout", "生图任务超时：服务端长时间未返回结果，可稍后重试");
+      }
     }
-    if (task.status === "failed") {
-      throw new AiError("http", task.error?.trim() || "生图任务失败，请调整描述词后重试");
+  } catch (error) {
+    // 本地取消/超时/网络中断退出时，尽力终止远端任务，避免任务继续在服务端消耗生图额度；
+    // 任务已到终态（成功/失败/已取消）时不重复取消
+    if (!taskTerminated) {
+      void cancelImageTask(taskId).catch(() => undefined);
     }
-    if (task.status === "cancelled") {
-      throw new AiError("timeout", "生图任务已取消");
-    }
-    if (Date.now() > deadline) {
-      throw new AiError("timeout", "生图任务超时：服务端长时间未返回结果，可稍后重试");
-    }
+    throw error;
   }
 
   const asset = await fetchPrimaryAsset(taskId, params.signal);

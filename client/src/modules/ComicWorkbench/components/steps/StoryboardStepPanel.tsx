@@ -326,8 +326,8 @@ export function StoryboardStepPanel(props: { projectId: string; onReadyChange?: 
         )}
       </div>
 
-      {/* 主体：左原文 / 右分镜 */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 pt-4 lg:grid-cols-2">
+      {/* 主体：左原文 / 右分镜（min-h 保证工作区高度，小屏时页面可滚动） */}
+      <div className="grid min-h-[60vh] flex-1 grid-cols-1 gap-4 pt-4 lg:grid-cols-2">
         <section className="flex min-h-0 flex-col rounded-xl bg-muted/20 p-1">
           <div className="px-3 pb-1 pt-2 text-xs text-muted-foreground">
             章节原文（选中分镜时自动定位并高亮）

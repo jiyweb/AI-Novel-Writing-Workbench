@@ -74,6 +74,6 @@ export async function generateInspirationDraft(
     schema: inspirationSchema,
     timeoutMs: defaults.longTextTimeoutMs,
     signal,
-    label: "inspiration_draft",
+    label: "灵感扩写",
   });
 }

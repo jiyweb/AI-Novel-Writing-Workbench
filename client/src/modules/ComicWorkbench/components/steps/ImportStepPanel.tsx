@@ -34,6 +34,8 @@ import { VirtualTextView } from "../../components/common/VirtualTextView";
 import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { describeAiError } from "../../services/ai/llmClient";
 import { importTxtFile, TxtImportError } from "../../services/import/txtImporter";
+import { splitIntoChapters } from "../../services/import/chapterSplitter";
+import { chapterPatterns } from "../../services/configService";
 import {
   cleanPastedText,
   detectSensitiveWords,
@@ -93,31 +95,59 @@ export function ImportStepPanel(props: { projectId: string; onReadyChange?: (rea
     onError: (error: Error) => toast.error(`删除失败：${error.message}`),
   });
 
-  const createChapterInternal = async (params: {
-    title: string;
-    sourceType: ComicChapter["sourceType"];
-    content: string;
-    inspiration?: { brief: InspirationBrief; draft: InspirationDraft };
-  }): Promise<ComicChapter> => {
-    const project = await getProject(projectId);
-    if (!project) throw new Error("项目不存在");
-    const chapter = await createChapter({
-      projectId,
-      title: params.title,
-      index: chapters.length + 1,
-      sourceType: params.sourceType,
-      sourceContent: params.content,
-      inspiration: params.inspiration,
-    });
-    await touchProject(project);
-    return chapter;
-  };
-
   const importMutation = useMutation({
-    mutationFn: createChapterInternal,
-    onSuccess: async (chapter) => {
-      openChapter(chapter.id);
-      toast.success(`章节「${chapter.title}」已导入，可前往下一步设置形态画风`);
+    mutationFn: async (params: {
+      title: string;
+      sourceType: ComicChapter["sourceType"];
+      content: string;
+      inspiration?: { brief: InspirationBrief; draft: InspirationDraft };
+    }) => {
+      const project = await getProject(projectId);
+      if (!project) throw new Error("项目不存在");
+
+      // 导入预处理（文件/粘贴）：章节号切分 + 非正文块识别 + 噪音清理；
+      // 灵感生成为 AI 结构化产出，不需要切分
+      const split =
+        params.sourceType === "inspiration"
+          ? null
+          : splitIntoChapters(params.content, chapterPatterns, params.title);
+      const items = split
+        ? split.chapters
+        : [{ title: params.title, content: params.content, annotations: [] }];
+
+      const created: ComicChapter[] = [];
+      let index = chapters.length;
+      for (const item of items) {
+        index += 1;
+        created.push(
+          await createChapter({
+            projectId,
+            title: item.title.trim() || `${params.title} ${index}`,
+            index,
+            sourceType: params.sourceType,
+            sourceContent: item.content,
+            annotations: item.annotations,
+            // 灵感产出只挂在第一章
+            inspiration: created.length === 0 ? params.inspiration : undefined,
+          }),
+        );
+      }
+      await touchProject(project);
+      return { created, report: split?.report ?? null };
+    },
+    onSuccess: async ({ created, report }) => {
+      const first = created[0];
+      if (first) openChapter(first.id);
+      const parts = [`导入 ${created.length} 个章节`];
+      if (report && report.headingLineCount > 0) parts.push(`识别章节号 ${report.headingLineCount} 个`);
+      if (report && report.annotationCount > 0)
+        parts.push(`非正文块 ${report.annotationCount} 段已跳过分镜`);
+      if (report && report.junkLineCount > 0) parts.push(`清理推广行 ${report.junkLineCount} 行`);
+      if (report && report.separatorLineCount > 0)
+        parts.push(`清理分隔线 ${report.separatorLineCount} 行`);
+      if (report && report.invisibleCharCount > 0)
+        parts.push(`清除隐形字符 ${report.invisibleCharCount} 个`);
+      toast.success(parts.join("，"));
       await invalidate();
     },
     onError: (error: Error) => toast.error(`导入失败：${error.message}`),
@@ -162,9 +192,21 @@ export function ImportStepPanel(props: { projectId: string; onReadyChange?: (rea
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {selectedChapter.sourceCharCount} 字
                 </span>
+                {(selectedChapter.annotations?.length ?? 0) > 0 && (
+                  <Badge variant="outline">
+                    非正文 {selectedChapter.annotations?.length} 段（不参与分镜）
+                  </Badge>
+                )}
               </div>
               <p className="shrink-0 text-xs text-muted-foreground">原文只读，分镜仅引用位置</p>
             </div>
+            {(selectedChapter.annotations?.length ?? 0) > 0 && (
+              <div className="border-b px-4 py-2 text-xs text-muted-foreground">
+                已识别并移出的非正文块：
+                {selectedChapter.annotations?.map((item) => `「${item.title}」`).join(" ")}
+                ，内容完整保留在章节注记中，分镜与台词不会引用。
+              </div>
+            )}
             <VirtualTextView content={selectedChapter.sourceContent} className="min-h-0 flex-1" />
           </>
         ) : (

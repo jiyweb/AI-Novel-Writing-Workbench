@@ -1,0 +1,64 @@
+{
+  "$comment": "导入预处理规则：章节号识别 / 非正文块（前言导语作者话）识别 / 广告推广行与分隔线清理。正则为 JS RegExp 字符串（不含定界符），整行匹配前会先 trim。",
+  "chapterHeadingPatterns": [
+    "^第\\s*[0-9０-９]+\\s*[章节回话集卷部篇]",
+    "^第\\s*[零〇一二两三四五六七八九十百千万]+\\s*[章节回话集卷部篇]",
+    "^Chapter\\s+\\d+",
+    "^Chapter\\s+(One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten)\\b",
+    "^\\d{1,4}\\s*[、．]",
+    "^\\d{1,4}\\.\\s+\\S"
+  ],
+  "storyHeadingPatterns": [
+    "^序章",
+    "^楔子",
+    "^引子",
+    "^尾声",
+    "^终章",
+    "^番外"
+  ],
+  "frontMatterHeadingPatterns": [
+    "^前言",
+    "^序言",
+    "^导语",
+    "^引言",
+    "^简介",
+    "^内容简介",
+    "^内容提要",
+    "^文案",
+    "^作品相关",
+    "^作品信息",
+    "^设定集"
+  ],
+  "authorNoteHeadingPatterns": [
+    "^作者的话",
+    "^作者留言",
+    "^作者有话说",
+    "^上架感言",
+    "^感言",
+    "^公告",
+    "^致谢",
+    "^后记",
+    "^更新说明",
+    "^请假条"
+  ],
+  "headingMaxChars": 50,
+  "headingTitleMaxChars": 30,
+  "headingTightTitleMaxChars": 12,
+  "headingTightTitleForbiddenStarts": "的了是说有在就也都也被把让使向从与和跟给为对快要想到看听走回来去说",
+  "headingPunctuationForbidden": "。！？；…，、",
+  "pureNumberHeadingPattern": "^\\d{1,4}$",
+  "pureNumberMaxChars": 8,
+  "frontMatterHeadingMaxChars": 30,
+  "frontMatterMaxChars": 5000,
+  "junkLinePatterns": [
+    "https?://\\S+",
+    "www\\.\\S+",
+    "^求(收藏|推荐票?|月票|订阅|评论|鲜花|打赏|追读|支持)\\s*[：:!！，,。\\s]",
+    "^\\[\\s*求(收藏|推荐票?|月票|订阅|评论|鲜花|打赏)\\s*\\]",
+    "^[（(]\\s*求(收藏|推荐票?|月票|订阅|评论|鲜花|打赏)\\s*[)）]",
+    "记住本站|本书首发|最新章节|无弹窗|笔趣阁|小说网|首发于|转载请注明|盗版必究"
+  ],
+  "junkLineMaxChars": 60,
+  "separatorLinePattern": "^[\\s\\-—－–=_＝~～*＊*•·・.。…·]{6,}$",
+  "invisibleCharPattern": "[\\u200b\\u200c\\u200d\\u2060\\ufeff\\u00ad\\u180e\\u200e\\u200f]"
+}

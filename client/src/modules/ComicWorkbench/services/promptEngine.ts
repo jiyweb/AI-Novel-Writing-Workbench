@@ -87,7 +87,15 @@ export function buildPanelPrompt(input: PromptBuildInput): PanelPrompt {
   const embedEnabled =
     (input.embedDialogue ?? chapter.letteringEmbed ?? true) && letteringMode !== "none";
   const dialoguesText = panel.dialogues
-    .map((dialogue) => `${dialogue.characterName || "旁白"}：「${dialogue.text}」`)
+    .map((dialogue) => {
+      const speaker =
+        dialogue.kind === "narration"
+          ? "旁白"
+          : dialogue.kind === "inner"
+            ? `${dialogue.characterName || "角色"}（内心）`
+            : dialogue.characterName || "旁白";
+      return `${speaker}：「${dialogue.text}」`;
+    })
     .join("；");
   const sfxText = metadata?.sfx ? `；画面拟声词「${metadata.sfx}」` : "";
   const embedUsable = embedEnabled && panel.dialogues.length > 0;
