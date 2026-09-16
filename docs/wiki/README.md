@@ -16,6 +16,7 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 ### Architecture
 
 - [模块边界与文档治理](./architecture/module-boundaries.md)
+- [漫画工作台模块边界与版本链](./architecture/comic-workbench-module-boundary.md)
 - [当前模型选择与厂商默认模型边界](./architecture/model-selection.md)
 - [配置项归属与可见性规范](./architecture/configuration-conventions.md)
 
