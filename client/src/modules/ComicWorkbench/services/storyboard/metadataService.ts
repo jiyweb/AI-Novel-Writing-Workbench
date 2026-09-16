@@ -14,7 +14,6 @@ import type { ComicChapter, ComicCharacter, ComicPanel, ComicScene } from "../..
 import { saveChapter, savePanels } from "../../db/comicDb";
 import { chatJson, describeAiError, type AiError } from "../ai/llmClient";
 import { narrativeTemplates } from "../configService";
-import type { AiConnectionSettings } from "../../types";
 
 /** 单次 LLM 调用处理的分镜数量（控制输出体积） */
 const BATCH_SIZE = 8;
@@ -80,7 +79,6 @@ export interface EnrichMetadataParams {
   characters: ComicCharacter[];
   /** 项目场景库：LLM 输出的场景名按此映射回 id */
   scenes: ComicScene[];
-  settings: AiConnectionSettings;
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }
@@ -90,7 +88,7 @@ export interface EnrichMetadataParams {
  * 返回成功更新的分镜数；单批失败抛出 AiError，由调用方决定是否继续。
  */
 export async function enrichPanelMetadata(params: EnrichMetadataParams): Promise<number> {
-  const { chapter, panels, characters, scenes, settings, signal, onProgress } = params;
+  const { chapter, panels, characters, scenes, signal, onProgress } = params;
   const eligible = panels.filter(
     (panel) => panel.sourceEndIndex > panel.sourceStartIndex,
   );
@@ -103,12 +101,12 @@ export async function enrichPanelMetadata(params: EnrichMetadataParams): Promise
     const batch = eligible.slice(start, start + BATCH_SIZE);
     const userPrompt = buildUserPrompt(chapter, batch, characters, scenes);
     const result = await chatJson({
-      settings,
       system: SYSTEM_PROMPT,
       user: userPrompt,
       schema: batchSchema,
       signal,
       temperature: 0.3,
+      label: "panel_metadata",
     });
 
     const byIndex = new Map(result.panels.map((item) => [item.index, item]));

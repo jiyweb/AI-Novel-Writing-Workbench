@@ -48,10 +48,17 @@ export interface NovelCoverImageGenerationRequest extends BaseImageGenerationReq
   promptMode?: Extract<ImagePromptMode, "novel_cover_chain" | "direct">;
 }
 
+export interface ComicPanelImageGenerationRequest extends BaseImageGenerationRequest {
+  sceneType: Extract<ImageSceneType, "comic_panel">;
+  /** 分镜 id：仅用于任务展示标识，不关联主数据 */
+  comicPanelId: string;
+}
+
 export type ImageGenerationRequest =
   | CharacterImageGenerationRequest
   | BookAnalysisCharacterImageGenerationRequest
-  | NovelCoverImageGenerationRequest;
+  | NovelCoverImageGenerationRequest
+  | ComicPanelImageGenerationRequest;
 
 export interface OptimizeCharacterImagePromptRequest {
   sceneType: Extract<ImageSceneType, "character">;
@@ -83,7 +90,7 @@ export type OptimizeImagePromptRequest =
   | OptimizeNovelCoverImagePromptRequest;
 
 export interface ImageProviderGenerateInput {
-  sceneType: Extract<ImageSceneType, "character" | "novel_cover" | "chapter_illustration" | "book_analysis_character">;
+  sceneType: Extract<ImageSceneType, "character" | "novel_cover" | "chapter_illustration" | "book_analysis_character" | "comic_panel">;
   provider: LLMProvider;
   model: string;
   prompt: string;

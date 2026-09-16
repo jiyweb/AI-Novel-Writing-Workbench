@@ -27,7 +27,7 @@ import {
   segmentSourceText,
   type SourceSegment,
 } from "./segmenter";
-import type { AiConnectionSettings, ComicChapter, ComicPanel, ShotDensityLevel } from "../../types";
+import type { ComicChapter, ComicPanel, ShotDensityLevel } from "../../types";
 
 /** 面板生成字段的初始状态 */
 function emptyGeneration(now: string): ComicPanel["generation"] {
@@ -105,15 +105,15 @@ const GROUP_SYSTEM_PROMPT = [
 
 /**
  * 按章节 densityPlan 重新生成分镜：大模型优先，失败或结果不完整时自动回落本地规则。
- * settings 未配置时直接走本地规则。
+ * options.tryLlm 为 false（主程序文本模型未就绪）时直接走本地规则。
  */
 export async function generateStoryboardAuto(
   chapter: ComicChapter,
-  settings?: AiConnectionSettings | null,
+  options?: { tryLlm?: boolean },
 ): Promise<GenerateStoryboardAutoResult> {
-  if (settings) {
+  if (options?.tryLlm !== false) {
     try {
-      const panels = await generateStoryboardLlm(chapter, settings);
+      const panels = await generateStoryboardLlm(chapter);
       return { panels, strategy: "llm" };
     } catch (error) {
       const panels = await generateStoryboardLocal(chapter);
@@ -125,7 +125,7 @@ export async function generateStoryboardAuto(
     }
   }
   const panels = await generateStoryboardLocal(chapter);
-  return { panels, strategy: "local", note: "未配置文本模型，已按本地规则分镜" };
+  return { panels, strategy: "local", note: "主程序文本模型未就绪，已按本地规则分镜" };
 }
 
 /** 按章节 densityPlan 用本地规则重新生成分镜（覆盖旧分镜，需 UI 确认） */
@@ -155,10 +155,7 @@ export async function generateStoryboardLocal(chapter: ComicChapter): Promise<Co
 }
 
 /** LLM 分组分镜：句级片段分批交给大模型分组，映射回原文索引后落库 */
-export async function generateStoryboardLlm(
-  chapter: ComicChapter,
-  settings: AiConnectionSettings,
-): Promise<ComicPanel[]> {
+export async function generateStoryboardLlm(chapter: ComicChapter): Promise<ComicPanel[]> {
   const rules = shotDensity.splitRules;
   const segments = segmentSourceText(chapter.sourceContent, rules);
   if (segments.length === 0) {
@@ -170,11 +167,11 @@ export async function generateStoryboardLlm(
   for (let start = 0; start < segments.length; start += SEGMENTS_PER_BATCH) {
     const batch = segments.slice(start, start + SEGMENTS_PER_BATCH);
     const result = await chatJson({
-      settings,
       system: GROUP_SYSTEM_PROMPT,
       user: buildGroupUserPrompt(batch),
       schema: groupSchema,
       temperature: 0.2,
+      label: "storyboard_group",
     });
     const covered = validateGroupCoverage(result.groups, batch.length);
     for (const indexes of covered) {

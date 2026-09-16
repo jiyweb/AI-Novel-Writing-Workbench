@@ -24,7 +24,7 @@ import {
 } from "../../db/comicDb";
 import { chatJson } from "../ai/llmClient";
 import { getAiDefaults } from "../ai/aiConfigService";
-import type { AiConnectionSettings, ComicChapter, ComicCharacter, ComicScene } from "../../types";
+import type { ComicChapter, ComicCharacter, ComicScene } from "../../types";
 
 /** 单次提取读入的原文上限（角色卡提取只需要主干描写） */
 const EXTRACT_CHAR_LIMIT = 12000;
@@ -76,18 +76,17 @@ export interface ExtractCastResult {
 /** LLM 提取角色与场景，同名卡片自动合并（mergedFrom 记录被并入的旧卡） */
 export async function extractCastFromChapter(params: {
   chapter: ComicChapter;
-  settings: AiConnectionSettings;
   signal?: AbortSignal;
 }): Promise<ExtractCastResult> {
-  const { chapter, settings, signal } = params;
+  const { chapter, signal } = params;
   const content = chapter.sourceContent.slice(0, EXTRACT_CHAR_LIMIT);
   const result = await chatJson({
-    settings,
     system: EXTRACT_SYSTEM_PROMPT,
     user: `章节标题：${chapter.title}\n\n正文：\n${content}`,
     schema: extractSchema,
     signal,
     temperature: 0.2,
+    label: "cast_extract",
     timeoutMs: getAiDefaults().longTextTimeoutMs,
   });
 

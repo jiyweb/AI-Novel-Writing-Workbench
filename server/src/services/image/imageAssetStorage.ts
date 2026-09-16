@@ -22,7 +22,7 @@ interface ParsedAssetMetadata {
 
 interface PersistGeneratedImageInput {
   taskId: string;
-  sceneType: "character" | "novel_cover" | "book_analysis_character";
+  sceneType: "character" | "novel_cover" | "book_analysis_character" | "comic_panel";
   baseCharacterId?: string | null;
   novelId?: string | null;
   bookAnalysisCharacterId?: string | null;
@@ -138,7 +138,9 @@ function buildStorageSegments(input: PersistGeneratedImageInput, extension: stri
     ? "novel-covers"
     : input.sceneType === "book_analysis_character"
       ? "book-analysis-characters"
-      : "characters";
+      : input.sceneType === "comic_panel"
+        ? "comic-panels"
+        : "characters";
   const localPath = path.join(storageRoot, sceneDirectory, ownerSegment, taskSegment, fileName);
   return {
     relativePath: path.relative(storageRoot, localPath).split(path.sep).join("/"),

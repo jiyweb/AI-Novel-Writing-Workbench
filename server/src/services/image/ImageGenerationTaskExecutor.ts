@@ -9,7 +9,7 @@ import {
 import { normalizeImageGenerationError } from "./imageGenerationMappers";
 import type { ImageSize } from "./types";
 
-type SupportedImageSceneType = "character" | "novel_cover" | "book_analysis_character";
+type SupportedImageSceneType = "character" | "novel_cover" | "book_analysis_character" | "comic_panel";
 
 function parseStringArrayJson(value: string | null | undefined): string[] {
   if (!value?.trim()) {
@@ -30,6 +30,7 @@ function resolveTaskOwnerKey(task: {
   baseCharacterId: string | null;
   novelId: string | null;
   bookAnalysisCharacterId: string | null;
+  currentItemKey: string | null;
 }): string | null {
   if (task.sceneType === "novel_cover") {
     return task.novelId;
@@ -40,11 +41,19 @@ function resolveTaskOwnerKey(task: {
   if (task.sceneType === "character") {
     return task.baseCharacterId;
   }
+  if (task.sceneType === "comic_panel") {
+    return task.currentItemKey;
+  }
   return null;
 }
 
 function resolveSceneType(sceneType: string): SupportedImageSceneType {
-  if (sceneType === "character" || sceneType === "novel_cover" || sceneType === "book_analysis_character") {
+  if (
+    sceneType === "character"
+    || sceneType === "novel_cover"
+    || sceneType === "book_analysis_character"
+    || sceneType === "comic_panel"
+  ) {
     return sceneType;
   }
   throw new AppError(`Scene type ${sceneType} is not supported for image generation yet.`, 400);
@@ -55,7 +64,18 @@ function buildAssetOwnerWhere(input: {
   baseCharacterId: string | null;
   novelId: string | null;
   bookAnalysisCharacterId: string | null;
+  taskId?: string | null;
 }): Record<string, unknown> {
+  if (input.sceneType === "comic_panel") {
+    if (!input.taskId) {
+      throw new AppError("Comic panel image asset is missing taskId.", 400);
+    }
+    return {
+      sceneType: "comic_panel",
+      taskId: input.taskId,
+    };
+  }
+
   if (input.sceneType === "novel_cover") {
     if (!input.novelId) {
       throw new AppError("Novel cover asset is missing novelId.", 400);
@@ -97,6 +117,7 @@ function buildMissingOwnerError(sceneType: SupportedImageSceneType): string {
 
 function resolveCurrentItemLabel(task: {
   sceneType: string;
+  currentItemLabel: string | null;
   baseCharacter?: { name: string } | null;
   novel?: { title: string } | null;
   bookAnalysisCharacter?: { name: string } | null;
@@ -110,10 +131,14 @@ function resolveCurrentItemLabel(task: {
   if (task.sceneType === "book_analysis_character") {
     return task.bookAnalysisCharacter?.name ?? null;
   }
+  if (task.sceneType === "comic_panel") {
+    return task.currentItemLabel ?? "漫画分镜";
+  }
   return task.baseCharacter?.name ?? null;
 }
 
 async function resolveReferenceImagesForTask(task: {
+  id: string;
   sceneType: string;
   baseCharacterId: string | null;
   novelId: string | null;
@@ -130,6 +155,7 @@ async function resolveReferenceImagesForTask(task: {
     baseCharacterId: task.baseCharacterId,
     novelId: task.novelId,
     bookAnalysisCharacterId: task.bookAnalysisCharacterId,
+    taskId: task.id,
   });
   const rows = await prisma.imageAsset.findMany({
     where: {
@@ -336,6 +362,7 @@ export async function executeImageGenerationTask(
       baseCharacterId: task.baseCharacterId,
       novelId: task.novelId,
       bookAnalysisCharacterId: task.bookAnalysisCharacterId,
+      taskId: task.id,
     });
 
     await ensureNotCancelled(task.id);

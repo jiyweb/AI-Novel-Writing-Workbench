@@ -33,7 +33,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   comicKeys,
-  useAiSettings,
+  useMainAiStatus,
   useComicChapter,
   useComicChapters,
   useComicCharacters,
@@ -58,7 +58,6 @@ import {
   describeMetadataError,
   enrichPanelMetadata,
 } from "../../services/storyboard/metadataService";
-import { isLlmReady } from "../../services/ai/aiConfigService";
 import type { ComicPanel, ShotDensityLevel } from "../../types";
 
 export function StoryboardStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
@@ -95,8 +94,8 @@ export function StoryboardStepPanel(props: { projectId: string; onReadyChange?: 
   const [metadataProgress, setMetadataProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
-  const aiSettings = useAiSettings();
-  const llmReady = isLlmReady(aiSettings.data);
+  const mainAiStatus = useMainAiStatus();
+  const llmReady = mainAiStatus.data?.llmReady ?? false;
   const charactersQuery = useComicCharacters(projectId);
   const characters = charactersQuery.data ?? [];
   const scenesQuery = useComicScenes(projectId);
@@ -120,8 +119,8 @@ export function StoryboardStepPanel(props: { projectId: string; onReadyChange?: 
   const generateMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("章节不存在");
-      // 大模型优先：配置了文本模型先交给 AI 分组，失败自动回落本地规则
-      return generateStoryboardAuto(chapter, aiSettings.data);
+      // 大模型优先：主程序文本模型就绪时交给 AI 分组，失败自动回落本地规则
+      return generateStoryboardAuto(chapter, { tryLlm: llmReady });
     },
     onSuccess: async (result) => {
       if (result.strategy === "llm") {
@@ -172,14 +171,13 @@ export function StoryboardStepPanel(props: { projectId: string; onReadyChange?: 
   const metadataMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("章节不存在");
-      if (!aiSettings.data) throw new Error("尚未配置 AI 接口，请先在 AI 设置中填写");
+      if (!llmReady) throw new Error("主程序文本模型未就绪，请先在主程序「模型设置」中配置");
       setMetadataProgress({ done: 0, total: panels.length });
       const updated = await enrichPanelMetadata({
         chapter,
         panels,
         characters,
         scenes,
-        settings: aiSettings.data,
         onProgress: (done, total) => setMetadataProgress({ done, total }),
       });
       return updated;

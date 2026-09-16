@@ -32,10 +32,11 @@ import { executeImageGenerationTask } from "./ImageGenerationTaskExecutor";
 import type {
   BookAnalysisCharacterImageGenerationRequest,
   CharacterImageGenerationRequest,
+  ComicPanelImageGenerationRequest,
   NovelCoverImageGenerationRequest,
 } from "./types";
 
-type SupportedImageSceneType = "character" | "novel_cover" | "book_analysis_character";
+type SupportedImageSceneType = "character" | "novel_cover" | "book_analysis_character" | "comic_panel";
 
 function parseBookAnalysisCharacterProfile(profileJson: string | null): Record<string, unknown> {
   if (!profileJson?.trim()) {
@@ -115,7 +116,12 @@ function resolveTaskOwnerKey(task: {
 }
 
 function resolveSceneType(sceneType: string): SupportedImageSceneType {
-  if (sceneType === "character" || sceneType === "novel_cover" || sceneType === "book_analysis_character") {
+  if (
+    sceneType === "character"
+    || sceneType === "novel_cover"
+    || sceneType === "book_analysis_character"
+    || sceneType === "comic_panel"
+  ) {
     return sceneType;
   }
   throw new AppError(`Scene type ${sceneType} is not supported for image generation yet.`, 400);
@@ -126,7 +132,18 @@ function buildAssetOwnerWhere(input: {
   baseCharacterId: string | null;
   novelId: string | null;
   bookAnalysisCharacterId: string | null;
+  taskId?: string | null;
 }): Record<string, unknown> {
+  if (input.sceneType === "comic_panel") {
+    if (!input.taskId) {
+      throw new AppError("Comic panel image asset is missing taskId.", 400);
+    }
+    return {
+      sceneType: "comic_panel",
+      taskId: input.taskId,
+    };
+  }
+
   if (input.sceneType === "novel_cover") {
     if (!input.novelId) {
       throw new AppError("Novel cover asset is missing novelId.", 400);
@@ -292,6 +309,52 @@ export class ImageGenerationService {
     return toImageTask(task);
   }
 
+  /**
+   * 漫画工作台分镜图任务：直接使用调用方组装好的描述词（prompt 已含形态/画风/角色绑定等），
+   * 不走参考图链；归属关系由客户端维护，服务端只记录分镜 id 供任务展示。
+   */
+  async createComicPanelTask(input: ComicPanelImageGenerationRequest): Promise<ImageGenerationTask> {
+    const provider: LLMProvider = input.provider ?? "openai";
+    if (!isImageProviderSupported(provider)) {
+      throw new AppError(`Provider ${provider} is not supported for image generation yet.`, 400);
+    }
+    const model = await resolveImageModel(provider, input.model);
+    const task = await prisma.imageGenerationTask.create({
+      data: {
+        sceneType: "comic_panel",
+        baseCharacterId: null,
+        novelId: null,
+        bookAnalysisCharacterId: null,
+        provider,
+        model,
+        prompt: input.prompt.trim(),
+        negativePrompt: input.negativePrompt?.trim() || null,
+        stylePreset: input.stylePreset?.trim() || null,
+        referenceImageAssetIdsJson: JSON.stringify([]),
+        size: input.size ?? "1024x1024",
+        imageCount: input.count ?? 1,
+        seed: input.seed,
+        status: "queued",
+        maxRetries: input.maxRetries ?? 2,
+        heartbeatAt: null,
+        currentStage: "queued",
+        currentItemKey: input.comicPanelId,
+        currentItemLabel: "漫画分镜",
+      },
+    });
+    this.enqueueTask(task.id);
+    return toImageTask(task);
+  }
+
+  /** 按任务取图片资产（漫画分镜图等任务级归属场景使用） */
+  async listTaskAssets(taskId: string): Promise<ImageAsset[]> {
+    const assets = await prisma.imageAsset.findMany({
+      where: { taskId },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    return assets.map((item) => toImageAsset(item));
+  }
+
   async getTask(taskId: string): Promise<ImageGenerationTask> {
     const task = await prisma.imageGenerationTask.findUnique({
       where: { id: taskId },
@@ -422,6 +485,7 @@ export class ImageGenerationService {
       baseCharacterId: asset.baseCharacterId,
       novelId: asset.novelId,
       bookAnalysisCharacterId: asset.bookAnalysisCharacterId,
+      taskId: asset.taskId,
     });
 
     await prisma.$transaction(async (tx) => {
@@ -452,6 +516,7 @@ export class ImageGenerationService {
       baseCharacterId: asset.baseCharacterId,
       novelId: asset.novelId,
       bookAnalysisCharacterId: asset.bookAnalysisCharacterId,
+      taskId: asset.taskId,
     });
 
     await prisma.$transaction(async (tx) => {

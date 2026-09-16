@@ -1,145 +1,115 @@
 /**
- * AI 连接配置服务
+ * AI 配置服务：本模块不再自建服务商 / API Key / baseUrl 配置。
  *
- * API Key 只存本机 IndexedDB，不经过任何服务器。
- * 服务商预设来自 config/aiProviders.json。
+ * 文本模型与生图模型全部使用主程序「模型设置」；此处只维护：
+ * - 分镜生图模型的覆盖选择（存 IndexedDB WorkbenchSettings.ai，null = 跟随主程序）
+ * - 主程序模型状态查询（就绪判断 + 生图选项列表 + 覆盖选择解析）
  */
+import { getAPIKeySettings, getLLMSelectionSetting } from "@/api/settings";
 import { aiProvidersConfig } from "../configService";
 import { getSettings, saveSettings } from "../../db/comicDb";
-import { getAPIKeySettings, getLLMSelectionSetting } from "@/api/settings";
-import type {
-  AiConnectionSettings,
-  AiProviderConfig,
-  AiProviderProtocolConfig,
-  AiProvidersConfig,
-} from "../../types";
+import { AiError } from "./llmClient";
+import type { ComicImageModelChoice } from "../../types";
 
-export async function getAiSettings(): Promise<AiConnectionSettings | null> {
-  return (await getSettings()).ai;
+/** 读取生图模型覆盖选择；IndexedDB 里的旧版直连配置直接视为未覆盖 */
+export async function getAiSettings(): Promise<{ image: ComicImageModelChoice } | null> {
+  const raw = (await getSettings()).ai as unknown;
+  if (!raw || typeof raw !== "object") return null;
+  const image = (raw as { image?: unknown }).image;
+  if (!image || typeof image !== "object") return null;
+  const legacy = image as { baseUrl?: unknown; apiKey?: unknown };
+  if (typeof legacy.baseUrl === "string" && legacy.baseUrl.trim()) return null;
+  const candidate = image as { providerId?: unknown; model?: unknown };
+  const choice: ComicImageModelChoice = {
+    providerId: typeof candidate.providerId === "string" && candidate.providerId.trim() ? candidate.providerId : undefined,
+    model: typeof candidate.model === "string" && candidate.model.trim() ? candidate.model : undefined,
+  };
+  if (!choice.providerId && !choice.model) return null;
+  return { image: choice };
 }
 
-export async function saveAiSettings(ai: AiConnectionSettings): Promise<void> {
+export async function saveAiSettings(ai: { image: ComicImageModelChoice } | null): Promise<void> {
   const settings = await getSettings();
   await saveSettings({ ...settings, ai });
 }
 
-/** 未配置时的默认值（取第一个 llm/image 可用服务商的预设） */
-export function buildDefaultAiSettings(): AiConnectionSettings {
-  const llmProvider = aiProvidersConfig.providers.find((p) => p.llm) ?? aiProvidersConfig.providers[0];
-  const imageProvider = aiProvidersConfig.providers.find((p) => p.image) ?? aiProvidersConfig.providers[0];
-  return {
-    llm: {
-      providerId: llmProvider.id,
-      baseUrl: llmProvider.llm?.defaultBaseUrl ?? "",
-      apiKey: "",
-      model: llmProvider.llm?.models[0] ?? "",
-    },
-    image: {
-      providerId: imageProvider.id,
-      baseUrl: imageProvider.image?.defaultBaseUrl ?? "",
-      apiKey: "",
-      model: imageProvider.image?.models[0] ?? "",
-    },
-  };
-}
-
-export function getProviderById(id: string): AiProviderConfig | undefined {
-  return aiProvidersConfig.providers.find((provider) => provider.id === id);
-}
-
-export function getProtocolOf(
-  provider: AiProviderConfig | undefined,
-  kind: "llm" | "image",
-): AiProviderProtocolConfig | undefined {
-  return kind === "llm" ? provider?.llm : provider?.image;
-}
-
-/** 全局调用参数（超时/重试） */
-export function getAiDefaults(): AiProvidersConfig["defaults"] {
+/** 全局调用参数（超时/重试/尺寸档位） */
+export function getAiDefaults() {
   return aiProvidersConfig.defaults;
 }
 
-/** AI 配置是否可用（至少文本模型配好，生图按需检查） */
-export function isLlmReady(settings: AiConnectionSettings | null | undefined): boolean {
-  return Boolean(settings?.llm.baseUrl && settings.llm.apiKey && settings.llm.model);
-}
-
-export function isImageReady(settings: AiConnectionSettings | null | undefined): boolean {
-  return Boolean(settings?.image.baseUrl && settings.image.apiKey && settings.image.model);
-}
-
 // ---------------------------------------------------------------------------
-// 从主程序导入模型选择（只读，不修改主程序任何数据）
+// 主程序模型状态
 // ---------------------------------------------------------------------------
 
-/** 主程序模型选择导入结果（Key 一律留空，由用户补填） */
-export interface ImportSelectionResult {
-  llm: Partial<AiConnectionSettings["llm"]>;
-  image: Partial<AiConnectionSettings["image"]>;
-  /** 面向用户的导入说明（已导入/跳过/未配置） */
-  notes: string[];
+export interface MainImageProviderOption {
+  /** 主程序厂商 id（作为生图 provider 提交参数） */
+  provider: string;
+  label: string;
+  models: string[];
+  /** 主程序当前为该厂商选中的生图模型 */
+  currentImageModel: string | null;
+  defaultImageModel: string | null;
 }
 
-/**
- * 读取主程序的文本模型选择与厂商状态，映射到本模块的服务商预设。
- * 主程序接口不返回明文 Key，因此只回填 服务商/模型/baseUrl；
- * 厂商匹配不上预设时跳过并记入 notes（映射表见 config/aiProviders.json 的 appProviderAliases）。
- */
-export async function importSelectionFromApp(): Promise<ImportSelectionResult> {
-  const aliases = aiProvidersConfig.appProviderAliases ?? {};
-  const notes: string[] = [];
+export interface MainAiStatus {
+  /** 主程序文本模型是否可用（漫画文本 AI 直接使用它） */
+  llmReady: boolean;
+  llmProvider: string | null;
+  llmModel: string | null;
+  /** 主程序是否有已配置的生图厂商 */
+  imageReady: boolean;
+  imageOptions: MainImageProviderOption[];
+}
+
+/** 查询主程序模型设置状态（只读，不修改主程序任何数据） */
+export async function fetchMainAiStatus(): Promise<MainAiStatus> {
   const [selectionRes, keysRes] = await Promise.all([
     getLLMSelectionSetting().catch(() => null),
     getAPIKeySettings().catch(() => null),
   ]);
   const selection = selectionRes?.data ?? null;
-  const keyStatuses = keysRes?.data ?? [];
-  const result: ImportSelectionResult = { llm: {}, image: {}, notes };
+  const statuses = keysRes?.data ?? [];
 
-  // 文本模型：优先主程序选定的文本模型，缺失时回落到启用中的文本厂商
-  const llmStatus =
-    (selection ? keyStatuses.find((s) => s.provider === selection.provider) : null) ??
-    keyStatuses.find((s) => s.isActive && s.textCapable) ??
-    null;
-  const llmProviderId = selection?.provider ?? llmStatus?.provider;
-  const llmComic = llmProviderId ? getProviderById(aliases[llmProviderId] ?? "") : undefined;
-  if (llmComic?.llm) {
-    result.llm = {
-      providerId: llmComic.id,
-      baseUrl:
-        llmStatus?.currentBaseURL?.trim() ||
-        llmStatus?.defaultBaseURL?.trim() ||
-        llmComic.llm.defaultBaseUrl,
-      model: selection?.model || llmStatus?.currentModel || "",
-    };
-    notes.push(`文本模型：已从主程序导入「${llmComic.name}」，请补填 API Key`);
-  } else if (llmProviderId) {
-    notes.push(`文本模型：主程序厂商「${llmProviderId}」暂无对应的浏览器直连预设，未导入`);
-  } else {
-    notes.push("文本模型：主程序尚未配置文本模型，未导入");
+  const imageOptions: MainImageProviderOption[] = statuses
+    .filter((s) => s.supportsImageGeneration && s.isConfigured)
+    .map((s) => ({
+      provider: s.provider,
+      label: s.displayName?.trim() || s.name,
+      models: s.imageModels ?? [],
+      currentImageModel: s.currentImageModel,
+      defaultImageModel: s.defaultImageModel,
+    }));
+
+  const selectedStatus = selection ? statuses.find((s) => s.provider === selection.provider) : null;
+  return {
+    llmReady: Boolean(selection?.model) && (!selectedStatus || selectedStatus.isConfigured),
+    llmProvider: selection?.provider ?? null,
+    llmModel: selection?.model ?? null,
+    imageReady: imageOptions.length > 0,
+    imageOptions,
+  };
+}
+
+/**
+ * 把覆盖选择解析成具体 provider/model：显式选择优先；
+ * 所选厂商已不可用或未选择时，回落到主程序第一个可用生图厂商。
+ */
+export async function resolveImageChoice(
+  choice: ComicImageModelChoice | null | undefined,
+): Promise<{ provider: string; model?: string }> {
+  const status = await fetchMainAiStatus();
+  const options = status.imageOptions;
+
+  const hit = choice?.providerId ? options.find((o) => o.provider === choice.providerId) : undefined;
+  const target = hit ?? options[0];
+  if (!target) {
+    throw new AiError("notConfigured", "主程序尚未配置可用的生图模型，请先在主程序「模型设置」中配置");
   }
-
-  // 生图模型：取主程序启用中（或任一）支持生图的厂商
-  const imageStatus =
-    keyStatuses.find((s) => s.isActive && s.supportsImageGeneration) ??
-    keyStatuses.find((s) => s.supportsImageGeneration && s.currentImageModel) ??
-    null;
-  const imageComic = imageStatus ? getProviderById(aliases[imageStatus.provider] ?? "") : undefined;
-  if (imageStatus && imageComic?.image) {
-    result.image = {
-      providerId: imageComic.id,
-      baseUrl:
-        imageStatus.currentBaseURL?.trim() ||
-        imageStatus.defaultBaseURL?.trim() ||
-        imageComic.image.defaultBaseUrl,
-      model: imageStatus.currentImageModel ?? "",
-    };
-    notes.push(`生图模型：已从主程序导入「${imageComic.name}」，请补填 API Key`);
-  } else if (imageStatus) {
-    notes.push(`生图模型：主程序厂商「${imageStatus.provider}」暂无对应的浏览器直连预设，未导入`);
-  } else {
-    notes.push("生图模型：主程序尚未配置生图模型，未导入");
-  }
-
-  return result;
+  const model =
+    (hit ? choice?.model || target.currentImageModel : target.currentImageModel)
+    ?? target.defaultImageModel
+    ?? target.models[0]
+    ?? undefined;
+  return { provider: target.provider, model };
 }

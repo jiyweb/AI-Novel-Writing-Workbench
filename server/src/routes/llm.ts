@@ -4,6 +4,8 @@ import { PROVIDER_AUTH_MODES } from "@ai-novel/shared/types/llm";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { llmConnectivityService } from "../llm/connectivity";
+import { invokeStructuredLlm } from "../llm/structuredInvoke";
+import type { TaskType } from "../llm/modelRouter";
 import { getStructuredFallbackSettings, saveStructuredFallbackSettings } from "../llm/structuredFallbackSettings";
 import { filterHiddenModels, getProviderModels, parseHiddenModels } from "../llm/modelCatalog";
 import { listModelRouteConfigs, MODEL_ROUTE_TASK_TYPES, upsertModelRouteConfig } from "../llm/modelRouter";
@@ -185,6 +187,41 @@ router.put(
         success: true,
         message: "模型路由已更新。",
       } satisfies ApiResponse<null>);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+const llmInvokeSchema = z.object({
+  system: z.string().max(60_000).optional(),
+  user: z.string().min(1).max(200_000),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().min(64).max(32_768).optional(),
+  taskType: z.string().trim().min(1).max(60).optional(),
+  label: z.string().trim().min(1).max(120).optional(),
+});
+
+router.post(
+  "/invoke",
+  validate({ body: llmInvokeSchema }),
+  async (req, res, next) => {
+    try {
+      const body = req.body as z.infer<typeof llmInvokeSchema>;
+      const data = await invokeStructuredLlm<Record<string, unknown>>({
+        systemPrompt: body.system,
+        userPrompt: body.user,
+        schema: z.object({}).passthrough(),
+        temperature: body.temperature,
+        maxTokens: body.maxTokens,
+        taskType: (body.taskType ?? "chat") as TaskType,
+        label: `comic_workbench:${body.label ?? "invoke"}`,
+      });
+      res.status(200).json({
+        success: true,
+        data,
+        message: "模型调用已完成。",
+      } satisfies ApiResponse<typeof data>);
     } catch (error) {
       next(error);
     }

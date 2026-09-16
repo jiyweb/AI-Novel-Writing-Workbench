@@ -112,29 +112,6 @@ const promptFormulaSchema = z.object({
 });
 
 const aiProvidersSchema = z.object({
-  providers: z.array(
-    z.object({
-      id: z.string().min(1),
-      name: z.string().min(1),
-      kind: z.enum(["llm", "image", "both"]),
-      llm: z
-        .object({
-          protocol: z.enum(["openai-chat", "ark-images", "grsai"]),
-          defaultBaseUrl: z.string(),
-          models: z.array(z.string()),
-        })
-        .optional(),
-      image: z
-        .object({
-          protocol: z.enum(["openai-chat", "ark-images", "grsai"]),
-          defaultBaseUrl: z.string(),
-          models: z.array(z.string()),
-        })
-        .optional(),
-      notes: z.string().optional(),
-    }),
-  ),
-  appProviderAliases: z.record(z.string(), z.string()).optional(),
   defaults: z.object({
     llmTimeoutMs: z.number().positive(),
     longTextTimeoutMs: z.number().positive(),
@@ -144,6 +121,7 @@ const aiProvidersSchema = z.object({
     maxRetries: z.number().int().min(1),
     retryBaseDelayMs: z.number().positive(),
     imageConcurrency: z.number().int().min(1),
+    imageSizes: z.array(z.string().regex(/^\d+x\d+$/)).min(1),
   }),
 });
 

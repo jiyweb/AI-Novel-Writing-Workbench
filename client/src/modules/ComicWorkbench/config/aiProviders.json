@@ -1,54 +1,5 @@
 {
-  "$comment": "AI 服务商预设：全部为浏览器直连（用户自配 API Key）。CORS 受限的服务商请改用支持跨域的网关地址（填在连接设置的 baseURL）。模型列表为默认建议，可在连接设置中自由修改。",
-  "appProviderAliases": {
-    "volcengine": "ark",
-    "grsai": "grsai"
-  },
-  "providers": [
-    {
-      "id": "ark",
-      "name": "火山方舟",
-      "kind": "both",
-      "llm": {
-        "protocol": "openai-chat",
-        "defaultBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-        "models": ["doubao-seed-2-1-pro-260628", "doubao-1-5-pro-32k-250115"]
-      },
-      "image": {
-        "protocol": "ark-images",
-        "defaultBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-        "models": ["doubao-seedream-5-0-lite", "doubao-seedream-5-0"]
-      },
-      "notes": "文本与生图共用 API Key；模型名需为接入点 ID 或模型 ID"
-    },
-    {
-      "id": "grsai",
-      "name": "GrsAI 聚合",
-      "kind": "image",
-      "image": {
-        "protocol": "grsai",
-        "defaultBaseUrl": "https://grsai.dakka.com.cn",
-        "models": ["nano-banana-pro", "nano-banana-2", "gpt-image-2", "gpt-image-2.5"]
-      },
-      "notes": "仅生图；异步提交后轮询取结果，全球节点可用 https://grsaiapi.com"
-    },
-    {
-      "id": "custom",
-      "name": "自定义 OpenAI 兼容",
-      "kind": "both",
-      "llm": {
-        "protocol": "openai-chat",
-        "defaultBaseUrl": "",
-        "models": []
-      },
-      "image": {
-        "protocol": "ark-images",
-        "defaultBaseUrl": "",
-        "models": []
-      },
-      "notes": "任意 OpenAI 兼容网关（如本地 one-api/new-api），适合解决 CORS 限制"
-    }
-  ],
+  "$comment": "漫画模块 AI 运行参数：服务商与模型配置全部来自主程序（大模型设置），此处只保留超时/重试/并发默认值与分镜图尺寸档位。",
   "defaults": {
     "llmTimeoutMs": 180000,
     "longTextTimeoutMs": 300000,
@@ -57,6 +8,7 @@
     "imagePollMaxMs": 300000,
     "maxRetries": 3,
     "retryBaseDelayMs": 800,
-    "imageConcurrency": 2
+    "imageConcurrency": 2,
+    "imageSizes": ["512x512", "768x768", "1024x1024", "1024x1536", "1536x1024"]
   }
 }

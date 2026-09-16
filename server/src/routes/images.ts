@@ -45,6 +45,11 @@ const generateSchema = z.discriminatedUnion("sceneType", [
     promptMode: z.enum(["character_chain", "direct"]).optional(),
     ...baseGenerateSchema,
   }),
+  z.object({
+    sceneType: z.literal("comic_panel"),
+    sceneId: z.string().trim().min(1),
+    ...baseGenerateSchema,
+  }),
 ]);
 
 const optimizePromptSchema = z.discriminatedUnion("sceneType", [
@@ -129,6 +134,20 @@ router.post("/generate", validate({ body: generateSchema }), async (req, res, ne
         bookAnalysisCharacterId: body.sceneId,
         prompt: body.prompt,
         promptMode: body.promptMode,
+        negativePrompt: body.negativePrompt,
+        stylePreset: body.stylePreset,
+        provider: body.provider,
+        model: body.model,
+        size: body.size,
+        count: body.count,
+        seed: body.seed,
+        maxRetries: body.maxRetries,
+      });
+    } else if (body.sceneType === "comic_panel") {
+      task = await imageGenerationService.createComicPanelTask({
+        sceneType: "comic_panel",
+        comicPanelId: body.sceneId,
+        prompt: body.prompt,
         negativePrompt: body.negativePrompt,
         stylePreset: body.stylePreset,
         provider: body.provider,
@@ -224,6 +243,20 @@ router.get("/tasks/:taskId", validate({ params: taskParamsSchema }), async (req,
       success: true,
       data,
       message: "Task fetched.",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/tasks/:taskId/assets", validate({ params: taskParamsSchema }), async (req, res, next) => {
+  try {
+    const { taskId } = req.params as z.infer<typeof taskParamsSchema>;
+    const data = await imageGenerationService.listTaskAssets(taskId);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "Task assets fetched.",
     } satisfies ApiResponse<typeof data>);
   } catch (error) {
     next(error);

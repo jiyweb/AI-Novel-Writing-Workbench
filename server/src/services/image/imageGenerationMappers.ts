@@ -112,6 +112,14 @@ export function toImageTask(row: Awaited<{
         baseCharacterId: null,
         novelId: null,
       };
+    case "comic_panel":
+      return {
+        ...baseTask,
+        sceneType: "comic_panel",
+        baseCharacterId: null,
+        novelId: null,
+        bookAnalysisCharacterId: null,
+      };
     default:
       throw new AppError(`Unsupported image task scene type: ${row.sceneType}`, 500);
   };
@@ -202,6 +210,14 @@ export function toImageAsset(row: Awaited<{
         bookAnalysisCharacterId: row.bookAnalysisCharacterId ?? "",
         baseCharacterId: null,
         novelId: null,
+      };
+    case "comic_panel":
+      return {
+        ...baseAsset,
+        sceneType: "comic_panel",
+        baseCharacterId: null,
+        novelId: null,
+        bookAnalysisCharacterId: null,
       };
     default:
       throw new AppError(`Unsupported image asset scene type: ${row.sceneType}`, 500);

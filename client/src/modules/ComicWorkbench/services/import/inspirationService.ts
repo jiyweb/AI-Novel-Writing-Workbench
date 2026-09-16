@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getAiDefaults } from "../ai/aiConfigService";
 import { chatJson } from "../ai/llmClient";
 import { narrativeTemplates } from "../configService";
-import type { AiConnectionSettings, InspirationBrief, InspirationDraft } from "../../types";
+import type { InspirationBrief, InspirationDraft } from "../../types";
 
 const inspirationSchema = z.object({
   characters: z
@@ -51,7 +51,6 @@ const SYSTEM_PROMPT = [
 
 /** 生成灵感草稿（失败抛 AiError，由调用方兜底提示） */
 export async function generateInspirationDraft(
-  settings: AiConnectionSettings,
   brief: InspirationBrief,
   signal?: AbortSignal,
 ): Promise<InspirationDraft> {
@@ -70,11 +69,11 @@ export async function generateInspirationDraft(
     .join("\n");
 
   return chatJson({
-    settings,
     system: SYSTEM_PROMPT,
     user,
     schema: inspirationSchema,
     timeoutMs: defaults.longTextTimeoutMs,
     signal,
+    label: "inspiration_draft",
   });
 }

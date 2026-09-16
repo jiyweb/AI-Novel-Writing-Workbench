@@ -34,13 +34,14 @@ import {
   useComicPanels,
   useComicProject,
   useComicScenes,
+  useMainAiStatus,
   useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
 import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { getImageBlob, getImageRecord, saveChapter } from "../../db/comicDb";
-import { aiProvidersConfig, getFormById } from "../../services/configService";
-import { getProviderById, isImageReady, saveAiSettings } from "../../services/ai/aiConfigService";
+import { getFormById } from "../../services/configService";
+import { saveAiSettings } from "../../services/ai/aiConfigService";
 import { describeAiError } from "../../services/ai/llmClient";
 import {
   ensureChapterTasks,
@@ -51,7 +52,7 @@ import {
 import { computePanelStaleMap } from "../../services/syncService";
 import { StaleBadge } from "../common/StaleBadge";
 import { StaleBanner } from "../common/StaleBanner";
-import type { AiConnectionSettings, ComicPanel, GenerationMode, GenerationStatus } from "../../types";
+import type { ComicImageModelChoice, ComicPanel, GenerationMode, GenerationStatus } from "../../types";
 
 /** 章节未就绪时的空待更新集合 */
 const EMPTY_IDS: ReadonlySet<string> = new Set();
@@ -95,7 +96,8 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
   const scenes = scenesQuery.data ?? [];
   const settingsQuery = useWorkbenchSettings();
   const aiSettings = useAiSettings();
-  const imageReady = isImageReady(aiSettings.data);
+  const mainAiStatus = useMainAiStatus();
+  const imageReady = mainAiStatus.data?.imageReady ?? false;
 
   const [mode, setMode] = useState<GenerationMode>("draft");
   const [progress, setProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
@@ -150,8 +152,7 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
   const runMutation = useMutation({
     mutationFn: async (onlyStale: boolean) => {
       if (!chapter || !project) throw new Error("请先选择章节");
-      if (!aiSettings.data) throw new Error("尚未配置 AI 接口，请先在 AI 设置中填写");
-      if (!isImageReady(aiSettings.data)) throw new Error("生图模型配置不完整，请在 AI 设置中检查");
+      if (!imageReady) throw new Error("主程序尚未配置可用的生图模型，请先在主程序「模型设置」中配置");
       const targets = onlyStale
         ? panels.filter((panel) => stale?.imageIds.has(panel.id))
         : panels;
@@ -167,7 +168,7 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
         characters,
         scenes,
         customFormula,
-        settings: aiSettings.data,
+        imageChoice: aiSettings.data?.image ?? null,
         signal: controller.signal,
         onProgress: setProgress,
       });
@@ -195,7 +196,7 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
   const redrawMutation = useMutation({
     mutationFn: async (params: { panel: ComicPanel; targetMode: GenerationMode }) => {
       if (!chapter || !project) throw new Error("请先选择章节");
-      if (!aiSettings.data) throw new Error("尚未配置 AI 接口，请先在 AI 设置中填写");
+      if (!imageReady) throw new Error("主程序尚未配置可用的生图模型，请先在主程序「模型设置」中配置");
       const controller = new AbortController();
       abortRef.current = controller;
       setRedrawingId(params.panel.id);
@@ -206,7 +207,7 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
         characters,
         scenes,
         customFormula,
-        settings: aiSettings.data,
+        imageChoice: aiSettings.data?.image ?? null,
         mode: params.targetMode,
         signal: controller.signal,
       });
@@ -222,11 +223,10 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
     },
   });
 
-  // 生图模型快捷切换：工具条 Select 直接改 AI 设置中的生图区（Key 不变）
+  // 生图模型快捷切换：厂商/模型全部来自主程序「模型设置」，这里只保存覆盖偏好
   const imageSwitchMutation = useMutation({
-    mutationFn: async (image: AiConnectionSettings["image"]) => {
-      if (!aiSettings.data) throw new Error("尚未配置 AI 接口");
-      await saveAiSettings({ ...aiSettings.data, image });
+    mutationFn: async (image: ComicImageModelChoice) => {
+      await saveAiSettings({ image });
     },
     onSuccess: async () => {
       toast.success("生图模型已切换");
@@ -236,17 +236,11 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
   });
 
   const handleImageSwitch = (value: string) => {
-    if (!aiSettings.data) return;
     const separatorIndex = value.indexOf("::");
-    const providerId = value.slice(0, separatorIndex);
-    const model = value.slice(separatorIndex + 2);
-    const preset = getProviderById(providerId)?.image;
-    const isSameProvider = providerId === aiSettings.data.image.providerId;
+    if (separatorIndex < 0) return;
     imageSwitchMutation.mutate({
-      providerId,
-      baseUrl: isSameProvider ? aiSettings.data.image.baseUrl : (preset?.defaultBaseUrl ?? ""),
-      model: model || preset?.models[0] || "",
-      apiKey: aiSettings.data.image.apiKey,
+      providerId: value.slice(0, separatorIndex),
+      model: value.slice(separatorIndex + 2),
     });
   };
 
@@ -315,50 +309,44 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
             <SelectItem value="hd">高清模式（正式成图）</SelectItem>
           </SelectContent>
         </Select>
-        {aiSettings.data ? (
-          (() => {
-            const image = aiSettings.data.image;
-            const imageProvider = getProviderById(image.providerId);
-            const imageModels = imageProvider?.image?.models ?? [];
-            const otherProviders = aiProvidersConfig.providers.filter(
-              (p) => p.image && p.id !== image.providerId,
-            );
-            return (
-              <Select
-                value={`${image.providerId}::${image.model}`}
-                onValueChange={handleImageSwitch}
-                disabled={busy || imageSwitchMutation.isPending}
-              >
-                <SelectTrigger className="h-9 w-56" title="切换生图模型">
-                  <SelectValue placeholder="生图模型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>{imageProvider?.name ?? "当前生图模型"}</SelectLabel>
-                    {image.model && !imageModels.includes(image.model) ? (
-                      <SelectItem value={`${image.providerId}::${image.model}`}>{image.model}</SelectItem>
-                    ) : null}
-                    {imageModels.map((model) => (
-                      <SelectItem key={model} value={`${image.providerId}::${model}`}>
+        {(() => {
+          // 选项来自主程序「模型设置」；本模块的覆盖选择仅在命中主程序厂商时生效
+          const options = mainAiStatus.data?.imageOptions ?? [];
+          if (options.length === 0) return null;
+          const override = aiSettings.data?.image ?? null;
+          const current =
+            (override?.providerId ? options.find((o) => o.provider === override.providerId) : undefined) ??
+            options[0];
+          const effectiveModel =
+            (override && current.provider === override.providerId ? override.model : undefined) ??
+            current.currentImageModel ??
+            current.defaultImageModel ??
+            current.models[0] ??
+            "";
+          return (
+            <Select
+              value={`${current.provider}::${effectiveModel}`}
+              onValueChange={handleImageSwitch}
+              disabled={busy || imageSwitchMutation.isPending}
+            >
+              <SelectTrigger className="h-9 w-56" title="切换生图模型">
+                <SelectValue placeholder="生图模型" />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectGroup key={option.provider}>
+                    <SelectLabel>{option.label}</SelectLabel>
+                    {option.models.map((model) => (
+                      <SelectItem key={model} value={`${option.provider}::${model}`}>
                         {model}
                       </SelectItem>
                     ))}
                   </SelectGroup>
-                  {otherProviders.map((p) => (
-                    <SelectGroup key={p.id}>
-                      <SelectLabel>{p.name}</SelectLabel>
-                      {(p.image?.models ?? []).map((model) => (
-                        <SelectItem key={model} value={`${p.id}::${model}`}>
-                          {model}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            );
-          })()
-        ) : null}
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        })()}
         {form?.letteringMode !== "none" ? (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             台词绘制到画面
@@ -383,7 +371,7 @@ export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (r
         {!imageReady ? (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Settings2 className="h-3.5 w-3.5" />
-            请先在 AI 设置中配置生图模型
+            请先在主程序「模型设置」中配置生图模型
           </span>
         ) : null}
         {progress ? (

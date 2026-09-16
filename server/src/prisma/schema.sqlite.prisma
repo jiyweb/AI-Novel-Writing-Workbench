@@ -111,6 +111,7 @@ enum ImageSceneType {
   novel_cover
   chapter_illustration
   book_analysis_character
+  comic_panel
 }
 
 enum ProjectMode {

@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   comicKeys,
-  useAiSettings,
+  useMainAiStatus,
   useComicCharacters,
   useComicChapters,
   useComicPanels,
@@ -46,7 +46,6 @@ import {
   uploadCharacterReference,
   type ReferenceSide,
 } from "../../services/cast/castService";
-import { isLlmReady } from "../../services/ai/aiConfigService";
 import { describeAiError } from "../../services/ai/llmClient";
 import type { ComicCharacter, ComicScene, SceneDynamicParams } from "../../types";
 
@@ -83,8 +82,8 @@ export function CastStepPanel(props: { projectId: string; onReadyChange?: (ready
   const [mergingCharacter, setMergingCharacter] = useState<ComicCharacter | null>(null);
   const [mergingScene, setMergingScene] = useState<ComicScene | null>(null);
 
-  const aiSettings = useAiSettings();
-  const llmReady = isLlmReady(aiSettings.data);
+  const mainAiStatus = useMainAiStatus();
+  const llmReady = mainAiStatus.data?.llmReady ?? false;
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: comicKeys.characters(projectId) });
@@ -96,8 +95,8 @@ export function CastStepPanel(props: { projectId: string; onReadyChange?: (ready
     mutationFn: async () => {
       const chapter = chapters.find((item) => item.id === chapterId);
       if (!chapter) throw new Error("请先选择一个章节作为提取来源");
-      if (!aiSettings.data) throw new Error("尚未配置 AI 接口，请先在 AI 设置中填写");
-      return extractCastFromChapter({ chapter, settings: aiSettings.data });
+      if (!llmReady) throw new Error("主程序文本模型未就绪，请先在主程序「模型设置」中配置");
+      return extractCastFromChapter({ chapter });
     },
     onSuccess: async (result) => {
       toast.success(

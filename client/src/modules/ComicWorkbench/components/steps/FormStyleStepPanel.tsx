@@ -23,14 +23,14 @@ import {
 import { cn } from "@/lib/utils";
 import {
   comicKeys,
-  useAiSettings,
+  useMainAiStatus,
   useComicChapters,
   useComicProject,
   useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { AiSettingsDialog } from "../settings/AiSettingsDialog";
 import { useReportStepReady } from "../common/StepNavFooter";
-import { isImageReady, getAiSettings } from "../../services/ai/aiConfigService";
+import { fetchMainAiStatus, getAiSettings } from "../../services/ai/aiConfigService";
 import { AiError, describeAiError } from "../../services/ai/llmClient";
 import { generateImage } from "../../services/ai/imageClient";
 import { saveImageBlob } from "../../db/comicDb";
@@ -96,7 +96,7 @@ export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (
   const project = projectQuery.data;
   const chaptersQuery = useComicChapters(projectId);
   const chapters = chaptersQuery.data ?? [];
-  const aiSettingsQuery = useAiSettings();
+  const mainAiStatus = useMainAiStatus();
   const settingsQuery = useWorkbenchSettings();
   const customPresets = settingsQuery.data?.customStylePresets ?? [];
 
@@ -240,14 +240,16 @@ export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (
     mutationFn: async () => {
       if (!project || !preset || !form) throw new Error("项目不存在");
       const settings = await getAiSettings();
-      if (!settings || !isImageReady(settings)) {
-        throw new AiError("notConfigured", "AI 生图模型未配置");
+      const status = await fetchMainAiStatus();
+      if (!status.imageReady) {
+        throw new AiError("notConfigured", "主程序尚未配置可用的生图模型");
       }
       const { prompt, negativePrompt } = buildTestImagePrompt(project, form, preset);
       setTestImage({ phase: "running", progress: "正在提交生图请求…" });
-      const image = await generateImage(settings, {
+      const image = await generateImage(settings?.image ?? null, {
         prompt,
         negativePrompt,
+        comicPanelId: `form-test:${projectId}`,
         width: form.referencePixel.width,
         height: form.referencePixel.height,
         onProgress: (message) =>
@@ -282,7 +284,7 @@ export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (
   });
 
   const onTestImageClick = () => {
-    if (!isImageReady(aiSettingsQuery.data)) {
+    if (!mainAiStatus.data?.imageReady) {
       pendingTestImage.current = true;
       setSettingsOpen(true);
       return;

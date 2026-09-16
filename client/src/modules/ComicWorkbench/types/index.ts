@@ -188,28 +188,8 @@ export interface PromptFormulaConfig {
   negativeWords: string;
 }
 
-/** AI 服务商预设 —— config/aiProviders.json */
-export interface AiProviderProtocolConfig {
-  /** 协议族：openai-chat 兼容 / ark-images 同步生图 / grsai 异步轮询生图 */
-  protocol: "openai-chat" | "ark-images" | "grsai";
-  defaultBaseUrl: string;
-  models: string[];
-}
-
-export interface AiProviderConfig {
-  id: string;
-  name: string;
-  /** 提供哪类能力 */
-  kind: "llm" | "image" | "both";
-  llm?: AiProviderProtocolConfig;
-  image?: AiProviderProtocolConfig;
-  notes?: string;
-}
-
+/** 漫画模块 AI 运行参数 —— config/aiProviders.json（只含默认参数与尺寸档位，服务商/模型配置全部来自主程序） */
 export interface AiProvidersConfig {
-  providers: AiProviderConfig[];
-  /** 主程序厂商 id → 本模块服务商 id（用于「从主程序导入」，匹配不上的跳过） */
-  appProviderAliases?: Record<string, string>;
   defaults: {
     llmTimeoutMs: number;
     longTextTimeoutMs: number;
@@ -220,13 +200,20 @@ export interface AiProvidersConfig {
     retryBaseDelayMs: number;
     /** 生图队列并发数 */
     imageConcurrency: number;
+    /** 主程序支持的分镜图尺寸档位（宽x高） */
+    imageSizes: string[];
   };
 }
 
-/** 用户 AI 连接配置（存 IndexedDB，API Key 不出本机） */
-export interface AiConnectionSettings {
-  llm: { providerId: string; baseUrl: string; apiKey: string; model: string };
-  image: { providerId: string; baseUrl: string; apiKey: string; model: string };
+/**
+ * 生图模型选择：显式指定主程序的服务商/模型；缺省时使用主程序当前选中的生图模型。
+ * 文本模型不再单独配置，直接使用主程序当前文本模型。
+ */
+export interface ComicImageModelChoice {
+  /** 主程序生图服务商 id（如 openai / ark / grsai），缺省 = 跟随主程序 */
+  providerId?: string;
+  /** 模型名，缺省 = 跟随主程序该服务商的默认生图模型 */
+  model?: string;
 }
 
 /** 爆款叙事模板 —— config/narrativeTemplates.json */
@@ -500,6 +487,8 @@ export interface PanelGeneration {
   mode?: GenerationMode;
   /** 成功后的图片 blob id（comic:image:{id}） */
   imageId?: string;
+  /** 主程序生图任务 id（comic_panel 场景，任务级归属） */
+  taskId?: string;
   /** 已尝试次数（失败自动重试上限 3） */
   attempts: number;
   error?: string;
@@ -581,7 +570,8 @@ export interface CustomPromptFormula {
 
 /** 个人风格预设库 / AI 配置等全局设置 */
 export interface WorkbenchSettings {
-  ai: AiConnectionSettings | null;
+  /** 生图模型覆盖选择（文本模型与 API Key 一律使用主程序配置）；null = 全部跟随主程序 */
+  ai: { image: ComicImageModelChoice } | null;
   customStylePresets: CustomStylePreset[];
   /** 自定义描述词公式模板（未设置时使用 config/promptFormula.json 默认值） */
   customPromptFormula?: CustomPromptFormula;

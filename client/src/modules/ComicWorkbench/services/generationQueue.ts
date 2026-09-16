@@ -23,9 +23,9 @@ import {
   savePanel,
 } from "../db/comicDb";
 import type {
-  AiConnectionSettings,
   ComicChapter,
   ComicCharacter,
+  ComicImageModelChoice,
   ComicPanel,
   ComicProject,
   ComicScene,
@@ -49,7 +49,8 @@ export interface RunQueueParams {
   characters: ComicCharacter[];
   scenes: ComicScene[];
   customFormula?: CustomPromptFormula | null;
-  settings: AiConnectionSettings;
+  /** 生图模型覆盖选择（null = 跟随主程序当前生图模型） */
+  imageChoice: ComicImageModelChoice | null;
   signal?: AbortSignal;
   onProgress?: (progress: QueueProgress) => void;
 }
@@ -204,7 +205,7 @@ export async function regeneratePanelImage(params: {
   characters: ComicCharacter[];
   scenes: ComicScene[];
   customFormula?: CustomPromptFormula | null;
-  settings: AiConnectionSettings;
+  imageChoice: ComicImageModelChoice | null;
   mode: GenerationMode;
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
@@ -229,7 +230,7 @@ export async function regeneratePanelImage(params: {
       characters: params.characters,
       scenes: params.scenes,
       customFormula: params.customFormula,
-      settings: params.settings,
+      imageChoice: params.imageChoice,
       signal: params.signal,
     },
     task,
@@ -253,7 +254,7 @@ interface TaskContext {
   characters: ComicCharacter[];
   scenes: ComicScene[];
   customFormula?: CustomPromptFormula | null;
-  settings: AiConnectionSettings;
+  imageChoice: ComicImageModelChoice | null;
   signal?: AbortSignal;
 }
 
@@ -301,9 +302,10 @@ async function runSingleTask(
   while (true) {
     try {
       onProgressMessage?.("正在生成画面…");
-      const image = await generateImage(params.settings, {
+      const image = await generateImage(params.imageChoice, {
         prompt: panel.prompt.final,
         negativePrompt: promptFormula.negativeWords,
+        comicPanelId: panel.id,
         width: pixel?.width ?? 1024,
         height: pixel?.height ?? 1024,
         signal: params.signal,

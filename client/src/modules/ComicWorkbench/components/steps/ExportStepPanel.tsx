@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   comicKeys,
-  useAiSettings,
+  useMainAiStatus,
   useComicChapter,
   useComicChapters,
   useComicProject,
@@ -28,7 +28,6 @@ import { useComicWorkbenchStore } from "../../stores/workbenchStore";
 import { AiSettingsDialog } from "../settings/AiSettingsDialog";
 import { listPanels } from "../../db/comicDb";
 import { getFormById, narrativeTemplates } from "../../services/configService";
-import { isLlmReady } from "../../services/ai/aiConfigService";
 import { describeAiError } from "../../services/ai/llmClient";
 import { generateMarketingCopy } from "../../services/marketingService";
 import {
@@ -57,7 +56,8 @@ export function ExportStepPanel(props: { projectId: string }) {
   const openChapter = useComicWorkbenchStore((state) => state.openChapter);
   const chapterQuery = useComicChapter(chapterId);
   const chapter = chapterQuery.data ?? null;
-  const aiSettingsQuery = useAiSettings();
+  const mainAiStatus = useMainAiStatus();
+  const llmReady = mainAiStatus.data?.llmReady ?? false;
 
   const [scope, setScope] = useState<ExportScope>("chapter");
   const [method, setMethod] = useState<ExportMethod>("strip");
@@ -74,7 +74,6 @@ export function ExportStepPanel(props: { projectId: string }) {
       if (!project) throw new Error("项目不存在");
       if (!chapter) throw new Error("请先选择一个章节");
       return generateMarketingCopy({
-        settings: aiSettingsQuery.data!,
         project,
         chapter,
         platformId,
@@ -90,8 +89,8 @@ export function ExportStepPanel(props: { projectId: string }) {
   });
 
   const runGenerateCopy = () => {
-    if (!isLlmReady(aiSettingsQuery.data)) {
-      toast.info("请先配置 AI 文本模型（API Key 只保存在本机）");
+    if (!llmReady) {
+      toast.info("主程序文本模型未就绪，请先在主程序「模型设置」中配置");
       setSettingsOpen(true);
       return;
     }

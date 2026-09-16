@@ -13,9 +13,9 @@ import {
   listProjects,
   listScenes,
 } from "../db/comicDb";
-import { getAiSettings } from "../services/ai/aiConfigService";
+import { fetchMainAiStatus, getAiSettings } from "../services/ai/aiConfigService";
 import { loadMarketingCopy } from "../services/marketingService";
-import type { AiConnectionSettings, WorkbenchSettings } from "../types";
+import type { WorkbenchSettings } from "../types";
 
 export const comicKeys = {
   projects: ["comic-workbench", "projects"] as const,
@@ -28,6 +28,7 @@ export const comicKeys = {
   marketing: (chapterId: string, platformId: string) =>
     ["comic-workbench", "marketing", chapterId, platformId] as const,
   aiSettings: ["comic-workbench", "aiSettings"] as const,
+  mainAiStatus: ["comic-workbench", "mainAiStatus"] as const,
   settings: ["comic-workbench", "settings"] as const,
 };
 
@@ -85,10 +86,20 @@ export function useComicScenes(projectId: string | null | undefined) {
   });
 }
 
+/** 生图模型覆盖选择（null = 跟随主程序） */
 export function useAiSettings() {
   return useQuery({
     queryKey: comicKeys.aiSettings,
     queryFn: getAiSettings,
+  });
+}
+
+/** 主程序模型状态（文本就绪 + 生图厂商选项），用于就绪判断与选择列表 */
+export function useMainAiStatus() {
+  return useQuery({
+    queryKey: comicKeys.mainAiStatus,
+    queryFn: fetchMainAiStatus,
+    staleTime: 30_000,
   });
 }
 
@@ -115,4 +126,4 @@ export function useWorkbenchSettings() {
   });
 }
 
-export type { AiConnectionSettings, WorkbenchSettings };
+export type { WorkbenchSettings };

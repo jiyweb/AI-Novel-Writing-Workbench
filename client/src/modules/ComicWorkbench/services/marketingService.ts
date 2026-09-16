@@ -15,7 +15,6 @@ import { chatJson } from "./ai/llmClient";
 import { narrativeTemplates } from "./configService";
 import { ComicDbKeys } from "../types";
 import type {
-  AiConnectionSettings,
   ComicChapter,
   ComicProject,
   MarketingCopy,
@@ -58,7 +57,6 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 export interface GenerateMarketingParams {
-  settings: AiConnectionSettings;
   project: ComicProject;
   chapter: ComicChapter;
   platformId: string;
@@ -69,7 +67,7 @@ export interface GenerateMarketingParams {
 export async function generateMarketingCopy(
   params: GenerateMarketingParams,
 ): Promise<MarketingCopy> {
-  const { settings, project, chapter, platformId, signal } = params;
+  const { project, chapter, platformId, signal } = params;
   const platform = getPlatformById(platformId);
   if (!platform) {
     throw new Error("发布平台配置不存在，请检查 narrativeTemplates.json");
@@ -100,12 +98,12 @@ export async function generateMarketingCopy(
     .join("\n");
 
   const result = await chatJson({
-    settings,
     system: SYSTEM_PROMPT,
     user,
     schema: marketingSchema,
     timeoutMs: defaults.llmTimeoutMs,
     signal,
+    label: "marketing_copy",
   });
 
   const copy: MarketingCopy = {

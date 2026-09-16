@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   comicKeys,
-  useAiSettings,
+  useMainAiStatus,
   useComicChapters,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
@@ -33,7 +33,6 @@ import { AiSettingsDialog } from "../../components/settings/AiSettingsDialog";
 import { VirtualTextView } from "../../components/common/VirtualTextView";
 import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { describeAiError } from "../../services/ai/llmClient";
-import { isLlmReady } from "../../services/ai/aiConfigService";
 import { importTxtFile, TxtImportError } from "../../services/import/txtImporter";
 import {
   cleanPastedText,
@@ -538,7 +537,7 @@ function InspirationSource(props: {
   }) => void;
 }) {
   const queryClient = useQueryClient();
-  const aiQuery = useAiSettings();
+  const mainAiStatusQuery = useMainAiStatus();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingGenerate, setPendingGenerate] = useState(false);
 
@@ -551,15 +550,14 @@ function InspirationSource(props: {
   const [editedContent, setEditedContent] = useState("");
 
   const runGenerate = async () => {
-    const settings = aiQuery.data;
-    if (!isLlmReady(settings)) {
-      toast.info("请先配置 AI 文本模型（API Key 只保存在本机）");
+    if (!mainAiStatusQuery.data?.llmReady) {
+      toast.info("主程序文本模型未就绪，请先在主程序「模型设置」中配置");
       setSettingsOpen(true);
       setPendingGenerate(true);
       return;
     }
     try {
-      const result = await generateInspirationDraft(settings!, {
+      const result = await generateInspirationDraft({
         keywords,
         length,
         genre,
@@ -576,12 +574,12 @@ function InspirationSource(props: {
 
   // 设置保存后自动继续生成
   useEffect(() => {
-    if (pendingGenerate && aiQuery.data && isLlmReady(aiQuery.data)) {
+    if (pendingGenerate && mainAiStatusQuery.data?.llmReady) {
       setPendingGenerate(false);
       void runGenerate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiQuery.data]);
+  }, [mainAiStatusQuery.data]);
 
   const confirmImport = () => {
     if (!draft) return;
@@ -605,7 +603,7 @@ function InspirationSource(props: {
         <p className="text-xs text-muted-foreground">输入灵感关键词，AI 生成人物、场景与正文（唯一走大模型的导入方式）</p>
         <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)}>
           <Settings2 className="h-3.5 w-3.5" />
-          AI 设置
+          AI 模型
         </Button>
       </div>
       <AiSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

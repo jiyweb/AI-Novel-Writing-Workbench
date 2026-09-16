@@ -1,4 +1,4 @@
-export type ImageSceneType = "character" | "novel_cover" | "chapter_illustration" | "book_analysis_character";
+export type ImageSceneType = "character" | "novel_cover" | "chapter_illustration" | "book_analysis_character" | "comic_panel";
 
 export type ImageTaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -60,11 +60,20 @@ export type BookAnalysisCharacterImageGenerationTask = BaseImageGenerationTask &
   novelId?: null;
 };
 
+/** 漫画工作台分镜图任务：无主数据外键，归属关系由客户端（IndexedDB）维护 */
+export type ComicPanelImageGenerationTask = BaseImageGenerationTask & {
+  sceneType: "comic_panel";
+  baseCharacterId?: null;
+  novelId?: null;
+  bookAnalysisCharacterId?: null;
+};
+
 export type ImageGenerationTask =
   | CharacterImageGenerationTask
   | NovelCoverImageGenerationTask
   | ChapterIllustrationImageGenerationTask
-  | BookAnalysisCharacterImageGenerationTask;
+  | BookAnalysisCharacterImageGenerationTask
+  | ComicPanelImageGenerationTask;
 
 interface BaseImageAsset {
   id: string;
@@ -115,8 +124,16 @@ export type BookAnalysisCharacterImageAsset = BaseImageAsset & {
   novelId?: null;
 };
 
+export type ComicPanelImageAsset = BaseImageAsset & {
+  sceneType: "comic_panel";
+  baseCharacterId?: null;
+  novelId?: null;
+  bookAnalysisCharacterId?: null;
+};
+
 export type ImageAsset =
   | CharacterImageAsset
   | NovelCoverImageAsset
   | ChapterIllustrationImageAsset
-  | BookAnalysisCharacterImageAsset;
+  | BookAnalysisCharacterImageAsset
+  | ComicPanelImageAsset;
