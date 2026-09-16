@@ -34,6 +34,8 @@ export interface PromptBuildInput {
   scenes: ComicScene[];
   /** 用户保存的个人模板（覆盖默认 segmentTemplates） */
   customFormula?: CustomPromptFormula | null;
+  /** 台词/旁白/声效逐字绘制进画面（缺省跟随 chapter.letteringEmbed，默认开启） */
+  embedDialogue?: boolean;
 }
 
 /** 生效的段模板（个人模板覆盖默认） */
@@ -62,6 +64,14 @@ export function buildPanelPrompt(input: PromptBuildInput): PanelPrompt {
     .map((character) => character.promptFragment || character.name)
     .join("；");
 
+  // 绑定强制（空镜兜底）：没有任何角色可用时，空镜按无人氛围镜渲染
+  const charactersValue =
+    charactersText.length > 0
+      ? charactersText
+      : metadata?.emptyShot
+        ? promptFormula.emptyShotHint
+        : "";
+
   // 剧情段：元数据动作概述优先，缺失时回落到本镜原文（只读引用，不回写）
   const sourceText = chapter.sourceContent
     .slice(panel.sourceStartIndex, panel.sourceEndIndex)
@@ -72,10 +82,22 @@ export function buildPanelPrompt(input: PromptBuildInput): PanelPrompt {
       : truncateForPrompt(sourceText, promptFormula.actionFallbackCharLimit);
 
   const letteringMode = form?.letteringMode ?? "bubble";
-  const letteringHint = (promptFormula.letteringHints[letteringMode] ?? "").replaceAll(
-    "{dialogueCount}",
-    String(panel.dialogues.length),
-  );
+
+  // 台词嵌入：开启时把台词/旁白与声效逐字写进描述词，由生图模型直接绘入画面
+  const embedEnabled =
+    (input.embedDialogue ?? chapter.letteringEmbed ?? true) && letteringMode !== "none";
+  const dialoguesText = panel.dialogues
+    .map((dialogue) => `${dialogue.characterName || "旁白"}：「${dialogue.text}」`)
+    .join("；");
+  const sfxText = metadata?.sfx ? `；画面拟声词「${metadata.sfx}」` : "";
+  const embedUsable = embedEnabled && panel.dialogues.length > 0;
+  const hintTemplate = embedUsable
+    ? (promptFormula.letteringEmbedHints[letteringMode] ?? "")
+    : (promptFormula.letteringHints[letteringMode] ?? "");
+  const letteringHint = hintTemplate
+    .replaceAll("{dialogueCount}", String(panel.dialogues.length))
+    .replaceAll("{dialoguesText}", dialoguesText)
+    .replaceAll("{sfxText}", embedUsable ? sfxText : "");
 
   const adjustments = project.styleAdjustments;
   const trimmedCustom = project.customStyleKeywords.trim();
@@ -92,7 +114,7 @@ export function buildPanelPrompt(input: PromptBuildInput): PanelPrompt {
     sceneTime: scene?.dynamic.time ?? "",
     sceneWeather: scene?.dynamic.weather ?? "",
     sceneLighting: scene?.dynamic.lighting ?? "",
-    charactersText,
+    charactersText: charactersValue,
     actionSummary: actionText,
     cameraDirective: metadata?.shotType
       ? (promptFormula.cameraDirectives[metadata.shotType] ?? "")

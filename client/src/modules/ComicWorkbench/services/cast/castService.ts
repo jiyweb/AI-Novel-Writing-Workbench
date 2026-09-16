@@ -173,7 +173,7 @@ function mergeFeatures(base: string, extra: string): string {
 }
 
 /** 角色/场景卡内容变化后递增项目内全部章节 cast 版本，供下游 stale 判定 */
-async function bumpCastVersion(projectId: string): Promise<void> {
+export async function bumpCastVersion(projectId: string): Promise<void> {
   const chapters = await listChapters(projectId);
   const now = new Date().toISOString();
   for (const item of chapters) {
@@ -201,7 +201,8 @@ export async function saveCharacterCard(
   };
   next.promptFragment = buildCharacterPromptFragment(next);
   await saveCharacter(next);
-  if (next.promptFragment !== character.promptFragment) {
+  // 姓名参与台词说话人匹配（matchSpeaker），新增或改名同样使已提取台词过期
+  if (next.promptFragment !== character.promptFragment || next.name !== character.name) {
     await bumpCastVersion(next.projectId);
   }
   return next;

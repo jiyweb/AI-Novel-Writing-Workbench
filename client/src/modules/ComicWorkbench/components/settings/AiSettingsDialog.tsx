@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import {
   buildDefaultAiSettings,
   getProviderById,
   getAiSettings,
+  importSelectionFromApp,
   saveAiSettings,
 } from "../../services/ai/aiConfigService";
 import { aiProvidersConfig } from "../../services/configService";
@@ -50,6 +52,30 @@ export function AiSettingsDialog(props: AiSettingsDialogProps) {
     setDraft((prev) => (prev ? { ...prev, llm: { ...prev.llm, ...patch } } : prev));
   const updateImage = (patch: Partial<AiConnectionSettings["image"]>) =>
     setDraft((prev) => (prev ? { ...prev, image: { ...prev.image, ...patch } } : prev));
+
+  const [importing, setImporting] = useState(false);
+
+  /** 从主程序导入模型选择：回填服务商/模型/baseUrl，API Key 留空由用户补填 */
+  const handleImport = async (kind: "llm" | "image") => {
+    setImporting(true);
+    try {
+      const result = await importSelectionFromApp();
+      const patch = kind === "llm" ? result.llm : result.image;
+      const prefix = kind === "llm" ? "文本模型" : "生图模型";
+      const sectionNotes = result.notes.filter((note) => note.startsWith(prefix));
+      if (Object.keys(patch).length > 0) {
+        if (kind === "llm") updateLlm(patch);
+        else updateImage(patch);
+        toast.success(sectionNotes.join("；") || "已导入主程序模型选择，请补填 API Key");
+      } else {
+        toast.info(sectionNotes.join("；") || "主程序暂无可导入的模型配置");
+      }
+    } catch (error) {
+      toast.error(`导入失败：${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!draft) return;
@@ -94,6 +120,8 @@ export function AiSettingsDialog(props: AiSettingsDialogProps) {
               providers={aiProvidersConfig.providers.filter((p) => p.llm)}
               value={draft.llm}
               onChange={updateLlm}
+              onImport={() => void handleImport("llm")}
+              importing={importing}
             />
             <ModelSection
               title="生图模型"
@@ -101,6 +129,8 @@ export function AiSettingsDialog(props: AiSettingsDialogProps) {
               providers={aiProvidersConfig.providers.filter((p) => p.image)}
               value={draft.image}
               onChange={updateImage}
+              onImport={() => void handleImport("image")}
+              importing={importing}
             />
             <p className="rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
               部分服务商不允许浏览器直连（跨域限制）。若保存后调用一直失败，
@@ -119,14 +149,31 @@ function ModelSection(props: {
   providers: Array<{ id: string; name: string; notes?: string }>;
   value: { providerId: string; baseUrl: string; apiKey: string; model: string };
   onChange: (patch: Partial<{ providerId: string; baseUrl: string; apiKey: string; model: string }>) => void;
+  /** 从主程序导入该区的服务商/模型/baseUrl（Key 留空待补填） */
+  onImport?: () => void;
+  importing?: boolean;
 }) {
   const provider = getProviderById(props.value.providerId);
   const models = provider?.llm?.models ?? provider?.image?.models ?? [];
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <h3 className="text-sm font-medium">{props.title}</h3>
-        <p className="text-xs text-muted-foreground">{props.description}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-medium">{props.title}</h3>
+          <p className="text-xs text-muted-foreground">{props.description}</p>
+        </div>
+        {props.onImport ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-xs"
+            disabled={props.importing}
+            onClick={props.onImport}
+          >
+            <Download className="mr-1 h-3.5 w-3.5" />
+            从主程序导入
+          </Button>
+        ) : null}
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -179,7 +226,7 @@ function ModelSection(props: {
             type="password"
             className={cn("h-9")}
             value={props.value.apiKey}
-            placeholder="sk-…"
+            placeholder={props.value.apiKey ? "sk-…" : "请补填 API Key（sk-…）"}
             onChange={(event) => props.onChange({ apiKey: event.target.value.trim() })}
           />
         </label>

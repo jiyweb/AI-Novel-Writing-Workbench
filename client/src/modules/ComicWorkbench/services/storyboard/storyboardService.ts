@@ -7,7 +7,11 @@
  *
  * 原文零修改（规则第5条）：一切分镜只用 sourceStartIndex/sourceEndIndex 锚定
  * chapter.sourceContent，空镜（转场镜）允许零长度区间。
+ *
+ * 生成策略：大模型优先（LLM 对句级片段做分组），失败或结果不完整时
+ * 自动回落本地规则分镜（generateStoryboardLocal），保证总有可用结果。
  */
+import { z } from "zod";
 import {
   deletePanels,
   generateId,
@@ -16,12 +20,14 @@ import {
   savePanels,
 } from "../../db/comicDb";
 import { getDensityLevel, shotDensity } from "../configService";
+import { chatJson, describeAiError } from "../ai/llmClient";
 import {
   findSplitOffset,
   groupSegmentsIntoPanels,
   segmentSourceText,
+  type SourceSegment,
 } from "./segmenter";
-import type { ComicChapter, ComicPanel, ShotDensityLevel } from "../../types";
+import type { AiConnectionSettings, ComicChapter, ComicPanel, ShotDensityLevel } from "../../types";
 
 /** 面板生成字段的初始状态 */
 function emptyGeneration(now: string): ComicPanel["generation"] {
@@ -69,11 +75,61 @@ async function rewriteOrder(chapter: ComicChapter, panels: ComicPanel[]): Promis
 // 智能生成
 // ---------------------------------------------------------------------------
 
+export type StoryboardStrategy = "llm" | "local";
+
+export interface GenerateStoryboardAutoResult {
+  panels: ComicPanel[];
+  /** llm = 大模型分组成功；local = 本地规则（含回落） */
+  strategy: StoryboardStrategy;
+  /** 回落本地时的原因说明（用于 UI 提示） */
+  note?: string;
+}
+
+/** 单次 LLM 调用处理的句级片段数量（控制输出体积） */
+const SEGMENTS_PER_BATCH = 30;
+
+/** LLM 分组输出契约：把片段索引分组为分镜 */
+const groupSchema = z.object({
+  groups: z
+    .array(z.object({ segmentIndexes: z.array(z.number().int().min(0)).min(1) }))
+    .min(1),
+});
+
+const GROUP_SYSTEM_PROMPT = [
+  "你是漫画分镜导演助手。把输入的编号片段（原文章节已切成句/对话片段）分组为分镜。",
+  "只输出 JSON，结构：{\"groups\":[{\"segmentIndexes\":[0,1]}]}。",
+  "规则：每个分镜是一个连续镜头画面，通常由 1-4 个相邻片段组成；对话与其引导叙述尽量同镜；",
+  "场景切换或时间跳跃处开新镜；片段必须不重不漏全部归组，组内索引保持升序。",
+  "禁止改写、翻译或省略任何片段内容。",
+].join("\n");
+
 /**
- * 按章节 densityPlan 重新生成分镜（覆盖旧分镜，需 UI 确认）。
- * 返回新生成的面板列表（已持久化）。
+ * 按章节 densityPlan 重新生成分镜：大模型优先，失败或结果不完整时自动回落本地规则。
+ * settings 未配置时直接走本地规则。
  */
-export async function generateStoryboard(chapter: ComicChapter): Promise<ComicPanel[]> {
+export async function generateStoryboardAuto(
+  chapter: ComicChapter,
+  settings?: AiConnectionSettings | null,
+): Promise<GenerateStoryboardAutoResult> {
+  if (settings) {
+    try {
+      const panels = await generateStoryboardLlm(chapter, settings);
+      return { panels, strategy: "llm" };
+    } catch (error) {
+      const panels = await generateStoryboardLocal(chapter);
+      return {
+        panels,
+        strategy: "local",
+        note: describeAiError(error),
+      };
+    }
+  }
+  const panels = await generateStoryboardLocal(chapter);
+  return { panels, strategy: "local", note: "未配置文本模型，已按本地规则分镜" };
+}
+
+/** 按章节 densityPlan 用本地规则重新生成分镜（覆盖旧分镜，需 UI 确认） */
+export async function generateStoryboardLocal(chapter: ComicChapter): Promise<ComicPanel[]> {
   const rules = shotDensity.splitRules;
   const segments = segmentSourceText(chapter.sourceContent, rules);
   const groups = groupSegmentsIntoPanels(segments, {
@@ -85,26 +141,111 @@ export async function generateStoryboard(chapter: ComicChapter): Promise<ComicPa
     sceneChangeMarkers: rules.sceneChangeMarkers,
   });
 
+  const ranges = groups.map((group) => {
+    const first = segments[group.segmentIndexes[0]];
+    const last = segments[group.segmentIndexes[group.segmentIndexes.length - 1]];
+    if (!first || !last) return null;
+    return {
+      startIndex: first.startIndex,
+      endIndex: last.endIndex,
+      densityApplied: group.levelApplied,
+    };
+  });
+  return persistStoryboard(chapter, ranges.filter((range): range is NonNullable<typeof range> => range !== null));
+}
+
+/** LLM 分组分镜：句级片段分批交给大模型分组，映射回原文索引后落库 */
+export async function generateStoryboardLlm(
+  chapter: ComicChapter,
+  settings: AiConnectionSettings,
+): Promise<ComicPanel[]> {
+  const rules = shotDensity.splitRules;
+  const segments = segmentSourceText(chapter.sourceContent, rules);
+  if (segments.length === 0) {
+    return persistStoryboard(chapter, []);
+  }
+
+  // 分批请求 LLM 分组；每批要求片段不重不漏全覆盖，否则视为结果无效
+  const ranges: Array<{ startIndex: number; endIndex: number; densityApplied: ShotDensityLevel }> = [];
+  for (let start = 0; start < segments.length; start += SEGMENTS_PER_BATCH) {
+    const batch = segments.slice(start, start + SEGMENTS_PER_BATCH);
+    const result = await chatJson({
+      settings,
+      system: GROUP_SYSTEM_PROMPT,
+      user: buildGroupUserPrompt(batch),
+      schema: groupSchema,
+      temperature: 0.2,
+    });
+    const covered = validateGroupCoverage(result.groups, batch.length);
+    for (const indexes of covered) {
+      const first = batch[indexes[0]];
+      const last = batch[indexes[indexes.length - 1]];
+      if (!first || !last) throw new Error("LLM 分镜分组越界");
+      ranges.push({
+        startIndex: first.startIndex,
+        endIndex: last.endIndex,
+        densityApplied: inferDensityLevel(indexes.length, chapter.densityPlan.global),
+      });
+    }
+  }
+  return persistStoryboard(chapter, ranges);
+}
+
+/** 校验批内分组覆盖：不重不漏且越界即失败（触发本地兜底） */
+function validateGroupCoverage(
+  groups: Array<{ segmentIndexes: number[] }>,
+  batchLength: number,
+): number[][] {
+  const seen = new Set<number>();
+  const ordered: number[][] = [];
+  for (const group of groups) {
+    const indexes = [...group.segmentIndexes].sort((a, b) => a - b);
+    for (const index of indexes) {
+      if (index >= batchLength) throw new Error("LLM 分镜分组索引越界");
+      if (seen.has(index)) throw new Error("LLM 分镜分组存在重复片段");
+      seen.add(index);
+    }
+    ordered.push(indexes);
+  }
+  if (seen.size !== batchLength) throw new Error("LLM 分镜分组未覆盖全部片段");
+  return ordered;
+}
+
+/** 按组内片段句数推断密度档位（找不到匹配档位时回落全局方案） */
+function inferDensityLevel(sentenceCount: number, fallback: ShotDensityLevel): ShotDensityLevel {
+  const hit = shotDensity.levels.find(
+    (level) => sentenceCount >= level.minSentences && sentenceCount <= level.maxSentences,
+  );
+  return hit?.id ?? fallback;
+}
+
+function buildGroupUserPrompt(batch: SourceSegment[]): string {
+  const lines = batch.map(
+    (segment, index) =>
+      `${index}|${segment.kind === "dialogue" ? "对话" : "叙述"}|${segment.text.replace(/\s+/g, " ").slice(0, 120)}`,
+  );
+  return `共 ${batch.length} 个片段（编号从 0 开始）。请分组为分镜 JSON：\n\n${lines.join("\n")}`;
+}
+
+/** 清空旧分镜并持久化新区间（本地/LLM 两条路径共用的收口） */
+async function persistStoryboard(
+  chapter: ComicChapter,
+  ranges: Array<{ startIndex: number; endIndex: number; densityApplied: ShotDensityLevel }>,
+): Promise<ComicPanel[]> {
   const now = new Date().toISOString();
   // 旧分镜连同其上的台词/描述词/生成记录一并清空
   await deletePanels(chapter.panelOrder, chapter.id);
 
-  const panels: ComicPanel[] = [];
-  for (const group of groups) {
-    const first = segments[group.segmentIndexes[0]];
-    const last = segments[group.segmentIndexes[group.segmentIndexes.length - 1]];
-    if (!first || !last) continue;
-    panels.push(
-      buildPanel({
-        chapter,
-        order: panels.length,
-        sourceStartIndex: first.startIndex,
-        sourceEndIndex: last.endIndex,
-        densityApplied: group.levelApplied,
-      }),
-    );
-  }
-  if (panels.length === 0 && segments.length === 0) {
+  const panels: ComicPanel[] = ranges.map((range, index) =>
+    buildPanel({
+      chapter,
+      order: index,
+      sourceStartIndex: range.startIndex,
+      sourceEndIndex: range.endIndex,
+      densityApplied: range.densityApplied,
+    }),
+  );
+  if (panels.length === 0 && chapter.sourceContent.trim().length === 0) {
     // 原文为空白：不产生分镜，也不推进版本
     return [];
   }

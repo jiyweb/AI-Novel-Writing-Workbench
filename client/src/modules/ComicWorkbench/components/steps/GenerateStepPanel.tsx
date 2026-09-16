@@ -11,16 +11,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
-import { Ban, ImageUp, Loader2, Play, RefreshCw, Settings2 } from "lucide-react";
+import { Ban, Loader2, Play, RefreshCw, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   comicKeys,
@@ -34,8 +37,10 @@ import {
   useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
-import { getImageBlob, getImageRecord } from "../../db/comicDb";
-import { isImageReady } from "../../services/ai/aiConfigService";
+import { useReportStepReady } from "../../components/common/StepNavFooter";
+import { getImageBlob, getImageRecord, saveChapter } from "../../db/comicDb";
+import { aiProvidersConfig, getFormById } from "../../services/configService";
+import { getProviderById, isImageReady, saveAiSettings } from "../../services/ai/aiConfigService";
 import { describeAiError } from "../../services/ai/llmClient";
 import {
   ensureChapterTasks,
@@ -46,12 +51,12 @@ import {
 import { computePanelStaleMap } from "../../services/syncService";
 import { StaleBadge } from "../common/StaleBadge";
 import { StaleBanner } from "../common/StaleBanner";
-import type { ComicPanel, GenerationMode, GenerationStatus } from "../../types";
+import type { AiConnectionSettings, ComicPanel, GenerationMode, GenerationStatus } from "../../types";
 
 /** 章节未就绪时的空待更新集合 */
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
-export function GenerateStepPanel(props: { projectId: string }) {
+export function GenerateStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
@@ -70,6 +75,19 @@ export function GenerateStepPanel(props: { projectId: string }) {
   const panels = useMemo(
     () => [...(panelsQuery.data ?? [])].sort((a, b) => a.order - b.order),
     [panelsQuery.data],
+  );
+
+  const hasImage = panels.some((panel) => panel.generation.status === "success");
+  useReportStepReady(
+    props.onReadyChange,
+    hasImage,
+    panels.length === 0
+      ? chapterId
+        ? "该章节还没有分镜；回到「智能分镜」先生成分镜"
+        : "先选择一个章节"
+      : hasImage
+        ? undefined
+        : "点击「开始生成」为分镜出图后，可进入下一步导出",
   );
   const charactersQuery = useComicCharacters(projectId);
   const characters = charactersQuery.data ?? [];
@@ -96,6 +114,10 @@ export function GenerateStepPanel(props: { projectId: string }) {
     () => (chapter ? computePanelStaleMap(panels, chapter) : null),
     [panels, chapter],
   );
+
+  // 分镜卡片缩略图随形态画幅等比展示
+  const form = project ? getFormById(project.formId) : undefined;
+  const formAspectRatio = (form?.aspectRatio ?? "3:4").replace(":", " / ");
 
   // 断点续传：进入章节时恢复上次中断的任务
   useEffect(() => {
@@ -200,6 +222,34 @@ export function GenerateStepPanel(props: { projectId: string }) {
     },
   });
 
+  // 生图模型快捷切换：工具条 Select 直接改 AI 设置中的生图区（Key 不变）
+  const imageSwitchMutation = useMutation({
+    mutationFn: async (image: AiConnectionSettings["image"]) => {
+      if (!aiSettings.data) throw new Error("尚未配置 AI 接口");
+      await saveAiSettings({ ...aiSettings.data, image });
+    },
+    onSuccess: async () => {
+      toast.success("生图模型已切换");
+      await queryClient.invalidateQueries({ queryKey: comicKeys.aiSettings });
+    },
+    onError: (error: Error) => toast.error(`生图模型切换失败：${error.message}`),
+  });
+
+  const handleImageSwitch = (value: string) => {
+    if (!aiSettings.data) return;
+    const separatorIndex = value.indexOf("::");
+    const providerId = value.slice(0, separatorIndex);
+    const model = value.slice(separatorIndex + 2);
+    const preset = getProviderById(providerId)?.image;
+    const isSameProvider = providerId === aiSettings.data.image.providerId;
+    imageSwitchMutation.mutate({
+      providerId,
+      baseUrl: isSameProvider ? aiSettings.data.image.baseUrl : (preset?.defaultBaseUrl ?? ""),
+      model: model || preset?.models[0] || "",
+      apiKey: aiSettings.data.image.apiKey,
+    });
+  };
+
   if (chapters.length === 0) {
     return <EmptyHint text="还没有章节。先回到「内容导入」导入正文，并完成分镜与描述词。" />;
   }
@@ -217,6 +267,18 @@ export function GenerateStepPanel(props: { projectId: string }) {
 
   const cancel = () => {
     abortRef.current?.abort();
+  };
+
+  // 台词绘制开关：只改章节开关字段，画面需重绘后才带台词文字
+  const toggleLetteringEmbed = async (checked: boolean) => {
+    if (!chapter) return;
+    await saveChapter({ ...chapter, letteringEmbed: checked, updatedAt: new Date().toISOString() });
+    await invalidate();
+    toast.success(
+      checked
+        ? "已开启台词绘制，重新生成画面后台词会直接绘入图中"
+        : "已关闭台词绘制，重新生成画面后仅保留气泡位置提示",
+    );
   };
 
   return (
@@ -253,6 +315,60 @@ export function GenerateStepPanel(props: { projectId: string }) {
             <SelectItem value="hd">高清模式（正式成图）</SelectItem>
           </SelectContent>
         </Select>
+        {aiSettings.data ? (
+          (() => {
+            const image = aiSettings.data.image;
+            const imageProvider = getProviderById(image.providerId);
+            const imageModels = imageProvider?.image?.models ?? [];
+            const otherProviders = aiProvidersConfig.providers.filter(
+              (p) => p.image && p.id !== image.providerId,
+            );
+            return (
+              <Select
+                value={`${image.providerId}::${image.model}`}
+                onValueChange={handleImageSwitch}
+                disabled={busy || imageSwitchMutation.isPending}
+              >
+                <SelectTrigger className="h-9 w-56" title="切换生图模型">
+                  <SelectValue placeholder="生图模型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>{imageProvider?.name ?? "当前生图模型"}</SelectLabel>
+                    {image.model && !imageModels.includes(image.model) ? (
+                      <SelectItem value={`${image.providerId}::${image.model}`}>{image.model}</SelectItem>
+                    ) : null}
+                    {imageModels.map((model) => (
+                      <SelectItem key={model} value={`${image.providerId}::${model}`}>
+                        {model}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  {otherProviders.map((p) => (
+                    <SelectGroup key={p.id}>
+                      <SelectLabel>{p.name}</SelectLabel>
+                      {(p.image?.models ?? []).map((model) => (
+                        <SelectItem key={model} value={`${p.id}::${model}`}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            );
+          })()
+        ) : null}
+        {form?.letteringMode !== "none" ? (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            台词绘制到画面
+            <Switch
+              checked={chapter.letteringEmbed ?? true}
+              disabled={busy}
+              onCheckedChange={(checked) => void toggleLetteringEmbed(checked)}
+            />
+          </label>
+        ) : null}
         {busy ? (
           <Button size="sm" variant="outline" onClick={cancel}>
             <Ban className="mr-1.5 h-4 w-4" />
@@ -296,10 +412,10 @@ export function GenerateStepPanel(props: { projectId: string }) {
         </div>
       ) : null}
 
-      {/* 分镜生成列表（虚拟滚动） */}
+      {/* 分镜生成列表（卡片网格，按行虚拟滚动） */}
       <section className="mt-4 flex min-h-0 flex-1 flex-col rounded-xl bg-muted/20">
         <div className="px-3 pb-1 pt-2 text-xs text-muted-foreground">
-          分镜画面（单镜可重新生成或切换草稿/高清档位）
+          分镜画面（多列卡片布局；单镜可重新生成或切换草稿/高清档位）
         </div>
         <GeneratePanelList
           panels={panels}
@@ -307,6 +423,7 @@ export function GenerateStepPanel(props: { projectId: string }) {
           busy={busy}
           redrawingId={redrawingId}
           staleIds={stale?.imageIds ?? EMPTY_IDS}
+          aspectRatio={formAspectRatio}
           onRedraw={(panel, targetMode) => redrawMutation.mutate({ panel, targetMode })}
         />
       </section>
@@ -315,8 +432,14 @@ export function GenerateStepPanel(props: { projectId: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// 分镜生成列表（虚拟滚动）
+// 分镜生成列表（卡片网格：ResizeObserver 实测宽度定列数，按行虚拟滚动）
 // ---------------------------------------------------------------------------
+
+/** 卡片目标宽度（px），用于估算列数 */
+const CARD_TARGET_WIDTH = 232;
+/** 最少/最多列数 */
+const MIN_COLS = 2;
+const MAX_COLS = 6;
 
 function GeneratePanelList(props: {
   panels: ComicPanel[];
@@ -324,89 +447,139 @@ function GeneratePanelList(props: {
   busy: boolean;
   redrawingId: string | null;
   staleIds: ReadonlySet<string>;
+  aspectRatio: string;
   onRedraw: (panel: ComicPanel, mode: GenerationMode) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // 实测容器宽度 → 计算列数（虚拟滚动的行是整行卡片）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      setContainerWidth((prev) => (Math.abs(prev - width) < 1 ? prev : width));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const cols = Math.max(
+    MIN_COLS,
+    Math.min(MAX_COLS, Math.floor((containerWidth - 8) / CARD_TARGET_WIDTH) || MIN_COLS),
+  );
+  const rowCount = Math.ceil(props.panels.length / cols);
 
   const virtualizer = useVirtualizer({
-    count: props.panels.length,
+    count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 150,
-    overscan: 3,
-    getItemKey: (index) => props.panels[index]?.id ?? index,
+    estimateSize: () => 320,
+    overscan: 2,
+    getItemKey: (index) => props.panels[index * cols]?.id ?? index,
   });
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-        {virtualizer.getVirtualItems().map((item) => {
-          const panel = props.panels[item.index];
-          if (!panel) return null;
-          const generation = panel.generation;
-          const isRedrawing = props.redrawingId === panel.id;
-          return (
+        {virtualizer.getVirtualItems().map((row) => (
+          <div
+            key={row.index}
+            data-index={row.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${row.start}px)`,
+            }}
+            className="pb-3"
+          >
             <div
-              key={panel.id}
-              data-index={item.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${item.start}px)`,
-              }}
-              className="pb-2"
+              className="grid gap-3"
+              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
             >
-              <div className="flex gap-3 rounded-lg border border-transparent bg-background/60 px-3 py-2.5">
-                <PanelThumb imageId={generation.imageId} className="h-28 w-20 shrink-0" />
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold">{item.index + 1}</span>
-                    <GenerationBadge status={generation.status} mode={generation.mode} attempts={generation.attempts} />
-                    {props.staleIds.has(panel.id) ? <StaleBadge /> : null}
-                    {isRedrawing ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                        处理中
-                      </Badge>
-                    ) : null}
-                    <div className="ml-auto">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
-                        disabled={props.busy}
-                        onClick={() => props.onRedraw(panel, props.mode)}
-                      >
-                        {generation.status === "success" ? (
-                          <>
-                            <RefreshCw className="mr-1 h-3 w-3" />
-                            重绘为{props.mode === "draft" ? "草稿" : "高清"}
-                          </>
-                        ) : (
-                          <>
-                            <ImageUp className="mr-1 h-3 w-3" />
-                            生成{props.mode === "draft" ? "草稿" : "高清"}
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                  {generation.error ? (
-                    <p className="text-xs text-destructive" title={generation.error}>
-                      {generation.error}
-                    </p>
-                  ) : null}
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
-                    {panel.prompt?.final || "该镜还没有描述词，生成时会按公式自动组装"}
-                  </p>
-                </div>
-              </div>
+              {Array.from({ length: cols }, (_, col) => {
+                const panelIndex = row.index * cols + col;
+                const panel = props.panels[panelIndex];
+                if (!panel) return null;
+                return (
+                  <PanelCard
+                    key={panel.id}
+                    panel={panel}
+                    index={panelIndex}
+                    mode={props.mode}
+                    busy={props.busy}
+                    redrawing={props.redrawingId === panel.id}
+                    stale={props.staleIds.has(panel.id)}
+                    aspectRatio={props.aspectRatio}
+                    onRedraw={props.onRedraw}
+                  />
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
+    </div>
+  );
+}
+
+function PanelCard(props: {
+  panel: ComicPanel;
+  index: number;
+  mode: GenerationMode;
+  busy: boolean;
+  redrawing: boolean;
+  stale: boolean;
+  aspectRatio: string;
+  onRedraw: (panel: ComicPanel, mode: GenerationMode) => void;
+}) {
+  const { panel, mode } = props;
+  const generation = panel.generation;
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-lg bg-background/60 p-2">
+      <div
+        className="relative overflow-hidden rounded-md bg-muted/40"
+        style={{ aspectRatio: props.aspectRatio }}
+      >
+        <PanelThumb imageId={generation.imageId} className="absolute inset-0 h-full w-full" />
+        <span className="absolute left-1.5 top-1.5 rounded bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold">
+          {props.index + 1}
+        </span>
+        {props.stale ? (
+          <div className="absolute right-1.5 top-1.5">
+            <StaleBadge />
+          </div>
+        ) : null}
+        {props.redrawing ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/60">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <GenerationBadge status={generation.status} mode={generation.mode} attempts={generation.attempts} />
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto h-6 px-1.5 text-[10px]"
+          disabled={props.busy}
+          onClick={() => props.onRedraw(panel, mode)}
+        >
+          {generation.status === "success" ? "重绘" : "生成"}
+          {mode === "draft" ? "·草稿" : "·高清"}
+        </Button>
+      </div>
+      {generation.error ? (
+        <p className="line-clamp-2 text-[10px] text-destructive" title={generation.error}>
+          {generation.error}
+        </p>
+      ) : null}
+      <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+        {panel.prompt?.final || "该镜还没有描述词，生成时会按公式自动组装"}
+      </p>
     </div>
   );
 }

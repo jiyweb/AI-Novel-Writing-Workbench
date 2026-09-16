@@ -34,6 +34,7 @@ import {
   useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
+import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { getFormById } from "../../services/configService";
 import {
   addManualDialogue,
@@ -63,7 +64,7 @@ const LETTERING_LABELS: Record<ComicLetteringMode, string> = {
 /** 章节未就绪时的空待更新集合 */
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
-export function DialogueStepPanel(props: { projectId: string }) {
+export function DialogueStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
@@ -85,6 +86,16 @@ export function DialogueStepPanel(props: { projectId: string }) {
   const panels = useMemo(
     () => [...(panelsQuery.data ?? [])].sort((a, b) => a.order - b.order),
     [panelsQuery.data],
+  );
+
+  useReportStepReady(
+    props.onReadyChange,
+    panels.length > 0,
+    panels.length > 0
+      ? undefined
+      : chapterId
+        ? "该章节还没有分镜；回到「智能分镜」先生成分镜，再提取台词"
+        : "先选择一个章节",
   );
   const charactersQuery = useComicCharacters(projectId);
   const characters = charactersQuery.data ?? [];
@@ -145,7 +156,11 @@ export function DialogueStepPanel(props: { projectId: string }) {
   const extractMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("章节不存在");
-      return extractDialogues(chapter, panels);
+      // extractDialogues 会原地改写传入对象，克隆后传入以免突变 react-query 缓存
+      return extractDialogues(
+        structuredClone(chapter),
+        panels.map((panel) => structuredClone(panel)),
+      );
     },
     onSuccess: async (result) => {
       toast.success(

@@ -28,10 +28,13 @@ import {
   useAiSettings,
   useComicCharacters,
   useComicChapters,
+  useComicPanels,
   useComicScenes,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
+import { useReportStepReady } from "../../components/common/StepNavFooter";
 import {
+  bumpCastVersion,
   extractCastFromChapter,
   loadReferenceImageBlob,
   mergeCharacterInto,
@@ -47,7 +50,7 @@ import { isLlmReady } from "../../services/ai/aiConfigService";
 import { describeAiError } from "../../services/ai/llmClient";
 import type { ComicCharacter, ComicScene, SceneDynamicParams } from "../../types";
 
-export function CastStepPanel(props: { projectId: string }) {
+export function CastStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
@@ -58,10 +61,22 @@ export function CastStepPanel(props: { projectId: string }) {
     () => [...(chaptersQuery.data ?? [])].sort((a, b) => a.index - b.index),
     [chaptersQuery.data],
   );
+  const panelsQuery = useComicPanels(chapterId);
+  const panelCount = panelsQuery.data?.length ?? 0;
   const charactersQuery = useComicCharacters(projectId);
   const characters = charactersQuery.data ?? [];
   const scenesQuery = useComicScenes(projectId);
   const scenes = scenesQuery.data ?? [];
+
+  useReportStepReady(
+    props.onReadyChange,
+    panelCount > 0,
+    panelCount > 0
+      ? undefined
+      : chapterId
+        ? "该章节还没有分镜；回到「智能分镜」先生成分镜，角色/场景提取会更有依据"
+        : "先选择一个章节",
+  );
 
   const [editingCharacter, setEditingCharacter] = useState<ComicCharacter | null>(null);
   const [editingScene, setEditingScene] = useState<ComicScene | null>(null);
@@ -271,6 +286,8 @@ export function CastStepPanel(props: { projectId: string }) {
                   updatedAt: new Date().toISOString(),
                 };
                 await saveCharacterCard(fresh, {});
+                // 新增角色（即使只填姓名）也影响说话人归属，需要标记台词待更新
+                await bumpCastVersion(projectId);
               } else {
                 await saveCharacterCard(editingCharacter, updates);
               }

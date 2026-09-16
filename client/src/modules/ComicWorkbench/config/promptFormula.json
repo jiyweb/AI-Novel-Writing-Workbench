@@ -28,6 +28,13 @@
     "chat": "画面呈现手机聊天界面布局，左侧消息靠左对齐，右侧消息靠右对齐，气泡数量：{dialogueCount}",
     "none": "画面无需预留文字区域"
   },
+  "letteringEmbedHints": {
+    "bubble": "将台词逐字绘制进对话气泡，气泡数量：{dialogueCount}，台词内容：{dialoguesText}；气泡内文字必须与台词完全一致，字体清晰可读，分布在人物头部附近，避免遮挡面部关键特征{sfxText}",
+    "caption": "将台词逐字绘制进画面底部字幕条，字幕数量：{dialogueCount}，字幕内容：{dialoguesText}；字幕文字必须与台词完全一致，不遮挡人物主体{sfxText}",
+    "chat": "画面呈现手机聊天界面布局，将台词逐字绘制进聊天气泡，左侧消息靠左对齐，右侧消息靠右对齐，气泡数量：{dialogueCount}，消息内容：{dialoguesText}；文字必须与台词完全一致{sfxText}",
+    "none": "画面无需预留文字区域"
+  },
+  "emptyShotHint": "无人空镜，仅呈现环境与氛围，画面中不出现任何人物",
   "qualityWords": {
     "draft": "低分辨率草稿预览",
     "hd": "高清细节，画质精致，8k"

@@ -36,15 +36,18 @@ import {
   useAiSettings,
   useComicChapter,
   useComicChapters,
+  useComicCharacters,
   useComicPanels,
+  useComicScenes,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
 import { VirtualTextView } from "../../components/common/VirtualTextView";
+import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { getDensityLevel, narrativeTemplates, shotDensity } from "../../services/configService";
 import {
   applyDensityOverride,
   deletePanel,
-  generateStoryboard,
+  generateStoryboardAuto,
   insertEmptyPanel,
   mergePanelWithNext,
   reorderPanels,
@@ -58,7 +61,7 @@ import {
 import { isLlmReady } from "../../services/ai/aiConfigService";
 import type { ComicPanel, ShotDensityLevel } from "../../types";
 
-export function StoryboardStepPanel(props: { projectId: string }) {
+export function StoryboardStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
@@ -77,6 +80,16 @@ export function StoryboardStepPanel(props: { projectId: string }) {
     [panelsQuery.data],
   );
 
+  useReportStepReady(
+    props.onReadyChange,
+    panels.length > 0,
+    panels.length > 0
+      ? undefined
+      : chapterId
+        ? "选择密度后点击「生成分镜」，生成后可进入下一步"
+        : "先选择一个章节",
+  );
+
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [dragPanelId, setDragPanelId] = useState<string | null>(null);
   const [metadataProgress, setMetadataProgress] = useState<{ done: number; total: number } | null>(
@@ -84,6 +97,10 @@ export function StoryboardStepPanel(props: { projectId: string }) {
   );
   const aiSettings = useAiSettings();
   const llmReady = isLlmReady(aiSettings.data);
+  const charactersQuery = useComicCharacters(projectId);
+  const characters = charactersQuery.data ?? [];
+  const scenesQuery = useComicScenes(projectId);
+  const scenes = scenesQuery.data ?? [];
   // 爆款增强：灵感导入选择的叙事模板，提示分镜节奏（元数据增强同样遵循）
   const narrativeTemplate = chapter
     ? narrativeTemplates.templates.find(
@@ -103,10 +120,17 @@ export function StoryboardStepPanel(props: { projectId: string }) {
   const generateMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("章节不存在");
-      await generateStoryboard(chapter);
+      // 大模型优先：配置了文本模型先交给 AI 分组，失败自动回落本地规则
+      return generateStoryboardAuto(chapter, aiSettings.data);
     },
-    onSuccess: async () => {
-      toast.success("分镜已生成，可拖动调整顺序或继续微调");
+    onSuccess: async (result) => {
+      if (result.strategy === "llm") {
+        toast.success("AI 智能分镜完成，可拖动调整顺序或继续微调");
+      } else if (result.note) {
+        toast.info(`已按本地规则完成分镜（${result.note}）`);
+      } else {
+        toast.success("分镜已生成，可拖动调整顺序或继续微调");
+      }
       await invalidate();
     },
     onError: (error: Error) => toast.error(`分镜生成失败：${error.message}`),
@@ -153,6 +177,8 @@ export function StoryboardStepPanel(props: { projectId: string }) {
       const updated = await enrichPanelMetadata({
         chapter,
         panels,
+        characters,
+        scenes,
         settings: aiSettings.data,
         onProgress: (done, total) => setMetadataProgress({ done, total }),
       });

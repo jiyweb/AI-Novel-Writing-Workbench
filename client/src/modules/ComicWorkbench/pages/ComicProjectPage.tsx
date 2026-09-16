@@ -2,7 +2,7 @@
  * /comic/projects/:id 漫画工作台
  * 步骤式布局：导入 → 形态画风 → 分镜 → 角色场景 → 台词 → 描述词 → 生成 → 导出
  */
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { getFormById, getStylePresetById } from "../services/configService";
 import { getProject } from "../db/comicDb";
 import { WORKBENCH_STEPS, useComicWorkbenchStore } from "../stores/workbenchStore";
+import { StepNavFooter } from "../components/common/StepNavFooter";
 import { ImportStepPanel } from "../components/steps/ImportStepPanel";
 import { FormStyleStepPanel } from "../components/steps/FormStyleStepPanel";
 import { StoryboardStepPanel } from "../components/steps/StoryboardStepPanel";
@@ -28,6 +29,19 @@ export default function ComicProjectPage() {
 
   const step = useComicWorkbenchStore((state) => state.step);
   const setStep = useComicWorkbenchStore((state) => state.setStep);
+
+  // 当前步骤「下一步」可用状态（由各面板通过 onReadyChange 上报）
+  const [readyState, setReadyState] = useState<{ ready: boolean; hint?: string }>({ ready: false });
+  const handleReadyChange = useCallback((ready: boolean, hint?: string) => {
+    setReadyState((prev) => (prev.ready === ready && prev.hint === hint ? prev : { ready, hint }));
+  }, []);
+  const goToStep = useCallback(
+    (next: WorkbenchStep) => {
+      setReadyState({ ready: false });
+      setStep(next);
+    },
+    [setStep],
+  );
 
   const projectQuery = useQuery({
     queryKey: ["comic-workbench", "project", projectId] as const,
@@ -75,7 +89,7 @@ export default function ComicProjectPage() {
           <button
             key={item.id}
             type="button"
-            onClick={() => setStep(item.id)}
+            onClick={() => goToStep(item.id)}
             className={cn(
               "rounded-md px-3 py-1.5 text-sm transition-colors",
               step === item.id
@@ -91,28 +105,38 @@ export default function ComicProjectPage() {
 
       {/* 步骤面板 */}
       <div className="flex min-h-0 flex-1 flex-col pt-5">
-        <StepBody step={step} projectId={projectId} />
+        <StepBody step={step} projectId={projectId} onReadyChange={handleReadyChange} />
       </div>
+
+      {/* 步骤导航页脚：上一步 / 下一步 */}
+      <StepNavFooter
+        step={step}
+        nextDisabled={!readyState.ready}
+        hint={readyState.hint}
+        onGoToStep={goToStep}
+      />
     </div>
   );
 }
 
-function StepBody(props: { step: WorkbenchStep; projectId: string }) {
+type ReadyChangeHandler = (ready: boolean, hint?: string) => void;
+
+function StepBody(props: { step: WorkbenchStep; projectId: string; onReadyChange: ReadyChangeHandler }) {
   switch (props.step) {
     case "import":
-      return <ImportStepPanel projectId={props.projectId} />;
+      return <ImportStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "formStyle":
-      return <FormStyleStepPanel projectId={props.projectId} />;
+      return <FormStyleStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "storyboard":
-      return <StoryboardStepPanel projectId={props.projectId} />;
+      return <StoryboardStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "cast":
-      return <CastStepPanel projectId={props.projectId} />;
+      return <CastStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "dialogue":
-      return <DialogueStepPanel projectId={props.projectId} />;
+      return <DialogueStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "prompt":
-      return <PromptStepPanel projectId={props.projectId} />;
+      return <PromptStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "generate":
-      return <GenerateStepPanel projectId={props.projectId} />;
+      return <GenerateStepPanel projectId={props.projectId} onReadyChange={props.onReadyChange} />;
     case "export":
       return <ExportStepPanel projectId={props.projectId} />;
     default:

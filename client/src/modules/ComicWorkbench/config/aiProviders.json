@@ -1,5 +1,9 @@
 {
   "$comment": "AI 服务商预设：全部为浏览器直连（用户自配 API Key）。CORS 受限的服务商请改用支持跨域的网关地址（填在连接设置的 baseURL）。模型列表为默认建议，可在连接设置中自由修改。",
+  "appProviderAliases": {
+    "volcengine": "ark",
+    "grsai": "grsai"
+  },
   "providers": [
     {
       "id": "ark",

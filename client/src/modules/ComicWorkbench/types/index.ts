@@ -174,6 +174,10 @@ export interface PromptFormulaConfig {
   cameraDirectives: Record<ShotType, string>;
   /** 台词呈现提示（按 letteringMode） */
   letteringHints: Record<ComicLetteringMode, string>;
+  /** 台词逐字绘制进画面的提示（按 letteringMode，含 {dialoguesText}/{sfxText} 占位符） */
+  letteringEmbedHints: Record<ComicLetteringMode, string>;
+  /** 空镜（无人物）时角色段的替代提示 */
+  emptyShotHint: string;
   /** 画质词（按生成模式） */
   qualityWords: Record<GenerationMode, string>;
   /** 线条粗细的中文展示词（UI 与描述词共用） */
@@ -204,6 +208,8 @@ export interface AiProviderConfig {
 
 export interface AiProvidersConfig {
   providers: AiProviderConfig[];
+  /** 主程序厂商 id → 本模块服务商 id（用于「从主程序导入」，匹配不上的跳过） */
+  appProviderAliases?: Record<string, string>;
   defaults: {
     llmTimeoutMs: number;
     longTextTimeoutMs: number;
@@ -373,6 +379,8 @@ export interface ComicChapter {
   panelOrder: string[];
   /** 台词提取是否已执行过 */
   dialogueExtracted: boolean;
+  /** 台词/旁白/声效是否绘制进画面（true 时描述词含逐字绘制指令；缺省视为开启） */
+  letteringEmbed?: boolean;
   /** 运营文案（按 平台id 存储） */
   marketing: Record<string, MarketingCopy>;
 }
@@ -457,6 +465,10 @@ export interface PanelMetadata {
   emotion?: EmotionLevel;
   /** 动作概述（用于描述词，非原文改写） */
   actionSummary: string;
+  /** 画面拟声/音效词（如「轰——」，随台词嵌入图片，可选） */
+  sfx?: string;
+  /** 该镜是否为空镜（无人物台词、仅环境或情绪留白） */
+  emptyShot?: boolean;
 }
 
 /** 描述词分段 */

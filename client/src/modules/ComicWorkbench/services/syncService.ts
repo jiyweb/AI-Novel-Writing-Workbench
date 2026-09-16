@@ -138,24 +138,31 @@ export interface SyncChapterTextResult {
 /**
  * 按依赖序重跑文本链。台词重提是全章确定性行为（重提后全章台词版本变化），
  * 因此描述词按同步后的最新状态统一重建；手动编辑的描述词默认跳过并保持待更新标记。
+ *
+ * 台词/描述词服务会原地改写传入的 chapter/panels；这里统一克隆后再交给服务，
+ * 避免突变 react-query 缓存对象——否则失效重取的数据与缓存结构化相等，
+ * structural sharing 保留旧引用，横幅等派生状态不会刷新。
  */
 export async function syncChapterText(
   params: SyncChapterTextParams,
 ): Promise<SyncChapterTextResult> {
-  const before = computeChapterStale(params.panels, params.chapter);
+  const chapter = structuredClone(params.chapter);
+  const panels = params.panels.map((panel) => structuredClone(panel));
+
+  const before = computeChapterStale(panels, chapter);
 
   let reExtractedDialogues = false;
   if (before.dialogue > 0) {
-    await extractDialogues(params.chapter, params.panels);
+    await extractDialogues(chapter, panels);
     reExtractedDialogues = true;
-    params.onStageProgress?.("dialogue", params.panels.length, params.panels.length);
+    params.onStageProgress?.("dialogue", panels.length, panels.length);
   }
 
   let rebuiltPrompts = 0;
   if (before.dialogue > 0 || before.prompt > 0) {
     rebuiltPrompts = await generateChapterPrompts({
-      chapter: params.chapter,
-      panels: params.panels,
+      chapter,
+      panels,
       project: params.project,
       characters: params.characters,
       scenes: params.scenes,
@@ -165,6 +172,6 @@ export async function syncChapterText(
     });
   }
 
-  const imageStale = computeChapterStale(params.panels, params.chapter).image;
+  const imageStale = computeChapterStale(panels, chapter).image;
   return { reExtractedDialogues, rebuiltPrompts, imageStale };
 }

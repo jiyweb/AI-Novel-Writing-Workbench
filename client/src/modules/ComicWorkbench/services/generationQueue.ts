@@ -277,6 +277,7 @@ async function runSingleTask(
       characters: params.characters,
       scenes: params.scenes,
       customFormula: params.customFormula,
+      embedDialogue: params.chapter.letteringEmbed ?? true,
     });
     panel.promptBasis = stageBasisSnapshot(params.chapter);
     await savePanel(panel);

@@ -256,7 +256,22 @@ export async function savePanel(panel: ComicPanel): Promise<void> {
 }
 
 export async function savePanels(panels: ComicPanel[]): Promise<void> {
-  await Promise.all(panels.map((panel) => savePanel(panel)));
+  // 面板本体键相互独立，可并发写；章节索引必须串行合并——
+  // 若并发执行"读索引-追加-写回"，会互相覆盖导致索引只剩最后一镜
+  await Promise.all(panels.map((panel) => set(ComicDbKeys.panel(panel.id), panel)));
+  const chapterIds = [...new Set(panels.map((panel) => panel.chapterId))];
+  for (const chapterId of chapterIds) {
+    const indexKey = ComicDbKeys.panelIndexOfChapter(chapterId);
+    const ids = (await get<string[]>(indexKey)) ?? [];
+    const incoming = panels
+      .filter((panel) => panel.chapterId === chapterId)
+      .map((panel) => panel.id);
+    const merged = [...ids];
+    for (const id of incoming) {
+      if (!merged.includes(id)) merged.push(id);
+    }
+    await set(indexKey, merged);
+  }
 }
 
 export async function deletePanels(panelIds: string[], chapterId: string): Promise<void> {
@@ -327,6 +342,15 @@ export async function deleteScene(id: string, projectId: string): Promise<void> 
 // 图片 blob
 // ---------------------------------------------------------------------------
 
+// 图片记录索引的串行互斥链：批量并发生图/重绘清理会同时"读索引-改-写回"，
+// 不加锁会互相覆盖导致索引丢项（与 savePanels 同类竞态）
+let imageIndexLock: Promise<unknown> = Promise.resolve();
+function withImageIndexLock<T>(task: () => Promise<T>): Promise<T> {
+  const result = imageIndexLock.then(task);
+  imageIndexLock = result.catch(() => undefined);
+  return result;
+}
+
 export async function saveImageBlob(
   record: Omit<ComicImageRecord, "id" | "createdAt">,
   blob: Blob | null,
@@ -337,9 +361,13 @@ export async function saveImageBlob(
     await set(ComicDbKeys.image(fullRecord.id), blob);
   }
   await set(ComicDbKeys.imageRecord(fullRecord.id), fullRecord);
-  const ids =
-    (await get<string[]>(ComicDbKeys.imageRecordIndexOfProject(record.projectId))) ?? [];
-  await set(ComicDbKeys.imageRecordIndexOfProject(record.projectId), [...ids, fullRecord.id]);
+  await withImageIndexLock(async () => {
+    const ids =
+      (await get<string[]>(ComicDbKeys.imageRecordIndexOfProject(record.projectId))) ?? [];
+    if (!ids.includes(fullRecord.id)) {
+      await set(ComicDbKeys.imageRecordIndexOfProject(record.projectId), [...ids, fullRecord.id]);
+    }
+  });
   return fullRecord;
 }
 
@@ -356,11 +384,14 @@ export async function getImageRecord(id: string): Promise<ComicImageRecord | und
 export async function deleteImageRecord(imageRecordId: string, projectId: string): Promise<void> {
   await del(ComicDbKeys.imageRecord(imageRecordId));
   await del(ComicDbKeys.image(imageRecordId));
-  const ids = (await get<string[]>(ComicDbKeys.imageRecordIndexOfProject(projectId))) ?? [];
-  await set(
-    ComicDbKeys.imageRecordIndexOfProject(projectId),
-    ids.filter((id) => id !== imageRecordId),
-  );
+  await withImageIndexLock(async () => {
+    const ids =
+      (await get<string[]>(ComicDbKeys.imageRecordIndexOfProject(projectId))) ?? [];
+    await set(
+      ComicDbKeys.imageRecordIndexOfProject(projectId),
+      ids.filter((id) => id !== imageRecordId),
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------

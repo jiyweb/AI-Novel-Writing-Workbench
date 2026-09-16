@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
-import { Copy, Loader2, RefreshCw, RotateCcw, Settings2, Sparkles } from "lucide-react";
+import { Copy, Loader2, RefreshCw, RotateCcw, Settings2, Sparkles, Wand2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
@@ -28,6 +28,7 @@ import {
   useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
+import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { promptFormula } from "../../services/configService";
 import {
   applyPromptEdit,
@@ -36,6 +37,10 @@ import {
   resetPanelPrompt,
   saveCustomPromptFormula,
 } from "../../services/promptEngine";
+import {
+  repairPanelBindings,
+  savePanelBinding,
+} from "../../services/storyboard/metadataService";
 import { computePanelStaleMap, syncChapterText } from "../../services/syncService";
 import { StaleBadge } from "../common/StaleBadge";
 import { StaleBanner } from "../common/StaleBanner";
@@ -60,7 +65,7 @@ const TEXTAREA_CLASS =
 /** 章节未就绪时的空待更新集合 */
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
-export function PromptStepPanel(props: { projectId: string }) {
+export function PromptStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
@@ -80,6 +85,16 @@ export function PromptStepPanel(props: { projectId: string }) {
     () => [...(panelsQuery.data ?? [])].sort((a, b) => a.order - b.order),
     [panelsQuery.data],
   );
+
+  useReportStepReady(
+    props.onReadyChange,
+    panels.length > 0,
+    panels.length > 0
+      ? undefined
+      : chapterId
+        ? "该章节还没有分镜；回到「智能分镜」先生成分镜，再生成描述词"
+        : "先选择一个章节",
+  );
   const charactersQuery = useComicCharacters(projectId);
   const characters = charactersQuery.data ?? [];
   const scenesQuery = useComicScenes(projectId);
@@ -90,6 +105,9 @@ export function PromptStepPanel(props: { projectId: string }) {
 
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [editingSegments, setEditingSegments] = useState<PromptSegments | null>(null);
+  /** 本镜绑定（角色多选/场景单选），保存时随描述词一并落库 */
+  const [bindCharacterIds, setBindCharacterIds] = useState<string[]>([]);
+  const [bindSceneId, setBindSceneId] = useState<string>("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -99,12 +117,29 @@ export function PromptStepPanel(props: { projectId: string }) {
     [panels, chapter],
   );
 
+  // 绑定检查：非空镜且未标记空镜的画镜，应至少绑定角色或场景（多场景时）
+  const unboundCount = useMemo(
+    () =>
+      panels.filter((panel) => {
+        if (panel.sourceEndIndex <= panel.sourceStartIndex) return false;
+        if (panel.metadata?.emptyShot) return false;
+        const hasCharacter =
+          (panel.metadata?.characterIds?.length ?? 0) > 0 ||
+          panel.dialogues.some((dialogue) => dialogue.characterId);
+        const hasScene = scenes.length <= 1 || Boolean(panel.metadata?.sceneId);
+        return !hasCharacter || !hasScene;
+      }).length,
+    [panels, scenes.length],
+  );
+
   const selectedPanel = panels.find((panel) => panel.id === selectedPanelId) ?? null;
 
   // 切镜/数据刷新后同步编辑态（保存后的刷新结果与编辑内容一致，无跳变）
   useEffect(() => {
     if (!selectedPanel) {
       setEditingSegments(null);
+      setBindCharacterIds([]);
+      setBindSceneId("");
       return;
     }
     const base = selectedPanel.prompt?.segments;
@@ -118,6 +153,8 @@ export function PromptStepPanel(props: { projectId: string }) {
       lettering: base?.lettering ?? "",
       quality: base?.quality ?? "",
     });
+    setBindCharacterIds(selectedPanel.metadata?.characterIds ?? []);
+    setBindSceneId(selectedPanel.metadata?.sceneId ?? "");
   }, [selectedPanel]);
 
   const invalidate = async () => {
@@ -131,9 +168,10 @@ export function PromptStepPanel(props: { projectId: string }) {
     mutationFn: async (includeManual: boolean) => {
       if (!chapter) throw new Error("章节不存在");
       if (!project) throw new Error("项目不存在");
+      // generateChapterPrompts 会原地改写传入对象，克隆后传入以免突变 react-query 缓存
       return generateChapterPrompts({
-        chapter,
-        panels,
+        chapter: structuredClone(chapter),
+        panels: panels.map((panel) => structuredClone(panel)),
         project,
         characters,
         scenes,
@@ -160,6 +198,27 @@ export function PromptStepPanel(props: { projectId: string }) {
       await invalidate();
     },
     onError: (error: Error) => toast.error(`保存失败：${error.message}`),
+  });
+
+  /** 一键修复绑定缺失：台词说话人→角色、唯一场景→场景、无人镜标记空镜 */
+  const repairMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter) throw new Error("章节不存在");
+      return repairPanelBindings({
+        chapter: structuredClone(chapter),
+        panels: panels.map((panel) => structuredClone(panel)),
+        scenes,
+      });
+    },
+    onSuccess: async (result) => {
+      toast.success(
+        result.repaired > 0
+          ? `已修复 ${result.repaired} 个分镜的绑定${result.manual > 0 ? `，还有 ${result.manual} 镜请在右侧手动勾选角色` : ""}`
+          : "没有需要自动修复的绑定",
+      );
+      await invalidate();
+    },
+    onError: (error: Error) => toast.error(`修复失败：${error.message}`),
   });
 
   /** 一键同步：先补齐台词重提（若有待更新），再重建描述词（画面重生成在生成步骤进行） */
@@ -196,13 +255,30 @@ export function PromptStepPanel(props: { projectId: string }) {
     return <EmptyHint text="本章还没有分镜。先回到「智能分镜」生成分镜，再来生成描述词。" />;
   }
 
-  const busy = generateMutation.isPending || panelMutation.isPending || syncMutation.isPending;
+  const busy = generateMutation.isPending || panelMutation.isPending || syncMutation.isPending || repairMutation.isPending;
   const promptCount = panels.filter((panel) => panel.prompt).length;
   const manualCount = panels.filter((panel) => panel.prompt?.manualOverride).length;
 
+  const toggleBoundCharacter = (characterId: string) => {
+    setBindCharacterIds((prev) =>
+      prev.includes(characterId)
+        ? prev.filter((id) => id !== characterId)
+        : [...prev, characterId],
+    );
+  };
+
   const saveSelected = () => {
-    if (!selectedPanel || !editingSegments) return;
-    panelMutation.mutate(() => applyPromptEdit(chapter, selectedPanel, editingSegments));
+    if (!selectedPanel || !editingSegments || !chapter) return;
+    const chapterSnapshot = structuredClone(chapter);
+    panelMutation.mutate(async () => {
+      await applyPromptEdit(chapterSnapshot, selectedPanel, editingSegments);
+      await savePanelBinding({
+        chapter: chapterSnapshot,
+        panel: selectedPanel,
+        characterIds: bindCharacterIds,
+        sceneId: bindSceneId || undefined,
+      });
+    });
   };
 
   const resetSelected = () => {
@@ -238,7 +314,21 @@ export function PromptStepPanel(props: { projectId: string }) {
 
       {/* 工具条 */}
       <div className="flex flex-wrap items-center gap-3 border-b pb-3">
-        <Button size="sm" disabled={busy} onClick={() => generateMutation.mutate(false)}>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            if (
+              unboundCount > 0 &&
+              !window.confirm(
+                `还有 ${unboundCount} 个分镜未绑定角色/场景，描述词会缺少角色或场景信息。可先点「一键修复」，或确定继续？`,
+              )
+            ) {
+              return;
+            }
+            generateMutation.mutate(false);
+          }}
+        >
           {generateMutation.isPending ? (
             <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
           ) : (
@@ -282,6 +372,23 @@ export function PromptStepPanel(props: { projectId: string }) {
             busy={syncMutation.isPending}
             onAction={() => syncMutation.mutate()}
           />
+        </div>
+      ) : null}
+
+      {/* 绑定检查条：描述词需要角色/场景信息才能组装出完整画面 */}
+      {unboundCount > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <span className="text-xs text-amber-700 dark:text-amber-400">
+            {unboundCount} 个分镜未绑定出场角色或场景，描述词会缺少画面主体信息
+          </span>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => repairMutation.mutate()}>
+            {repairMutation.isPending ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Wand2 className="mr-1.5 h-4 w-4" />
+            )}
+            一键修复
+          </Button>
         </div>
       ) : null}
 
@@ -335,6 +442,62 @@ export function PromptStepPanel(props: { projectId: string }) {
                 </div>
                 <p className="text-xs leading-relaxed">
                   {selectedPanel.prompt?.final || "尚未生成。点击左上角「生成全部描述词」，或直接在下方分段编辑后保存。"}
+                </p>
+              </div>
+
+              {/* 本镜绑定：出场角色/场景是描述词「角色/场景段」的信息来源 */}
+              <div className="rounded-lg bg-background/60 px-3 py-2">
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">本镜绑定</div>
+                <div className="text-xs text-muted-foreground">出场角色</div>
+                {characters.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {characters.map((character) => {
+                      const active = bindCharacterIds.includes(character.id);
+                      return (
+                        <button
+                          key={character.id}
+                          type="button"
+                          onClick={() => toggleBoundCharacter(character.id)}
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-xs transition-colors",
+                            active
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                        >
+                          {character.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    项目还没有角色卡，先到「角色场景」步骤创建。
+                  </p>
+                )}
+                {scenes.length > 0 ? (
+                  <label className="mt-2 block">
+                    <span className="mb-1 block text-xs text-muted-foreground">所属场景</span>
+                    <select
+                      value={bindSceneId}
+                      onChange={(event) => setBindSceneId(event.target.value)}
+                      className="w-full rounded-md border border-input bg-transparent px-2 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <option value="">未绑定</option>
+                      {scenes.map((scene) => (
+                        <option key={scene.id} value={scene.id}>
+                          {scene.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    项目还没有场景卡，先到「角色场景」步骤创建。
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  绑定后点「保存本镜」，描述词的角色/场景段会引用对应卡片信息。
                 </p>
               </div>
 

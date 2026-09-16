@@ -31,6 +31,7 @@ import { createChapter, deleteChapterCascade, getProject, saveChapter } from "..
 import { touchProject } from "../../services/projectService";
 import { AiSettingsDialog } from "../../components/settings/AiSettingsDialog";
 import { VirtualTextView } from "../../components/common/VirtualTextView";
+import { useReportStepReady } from "../../components/common/StepNavFooter";
 import { describeAiError } from "../../services/ai/llmClient";
 import { isLlmReady } from "../../services/ai/aiConfigService";
 import { importTxtFile, TxtImportError } from "../../services/import/txtImporter";
@@ -48,7 +49,7 @@ import type { ComicChapter, InspirationBrief, InspirationDraft } from "../../typ
 
 type SourceTab = "txt" | "paste" | "inspiration";
 
-export function ImportStepPanel(props: { projectId: string }) {
+export function ImportStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
@@ -58,6 +59,12 @@ export function ImportStepPanel(props: { projectId: string }) {
   const chapters = useMemo(
     () => [...(chaptersQuery.data ?? [])].sort((a, b) => a.index - b.index),
     [chaptersQuery.data],
+  );
+
+  useReportStepReady(
+    props.onReadyChange,
+    chapters.length > 0,
+    chapters.length > 0 ? undefined : "先在左侧用「导入文件 / 粘贴小说 / 灵感」导入至少一个章节",
   );
 
   // 默认选中第一章

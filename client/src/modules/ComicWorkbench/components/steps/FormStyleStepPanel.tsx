@@ -29,6 +29,7 @@ import {
   useWorkbenchSettings,
 } from "../../hooks/useComicQuery";
 import { AiSettingsDialog } from "../settings/AiSettingsDialog";
+import { useReportStepReady } from "../common/StepNavFooter";
 import { isImageReady, getAiSettings } from "../../services/ai/aiConfigService";
 import { AiError, describeAiError } from "../../services/ai/llmClient";
 import { generateImage } from "../../services/ai/imageClient";
@@ -85,9 +86,11 @@ type TestImageState =
   | { phase: "done"; url: string; fromRemote: boolean }
   | { phase: "error"; message: string };
 
-export function FormStyleStepPanel(props: { projectId: string }) {
+export function FormStyleStepPanel(props: { projectId: string; onReadyChange?: (ready: boolean, hint?: string) => void }) {
   const { projectId } = props;
   const queryClient = useQueryClient();
+
+  useReportStepReady(props.onReadyChange, true);
 
   const projectQuery = useComicProject(projectId);
   const project = projectQuery.data;
@@ -307,7 +310,7 @@ export function FormStyleStepPanel(props: { projectId: string }) {
             形态决定画幅比例、每图格数与台词样式；当前「{form.name} · {form.aspectRatio}」
           </p>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           {comicForms.map((item) => {
             const selected = item.id === project.formId;
             return (
@@ -316,7 +319,7 @@ export function FormStyleStepPanel(props: { projectId: string }) {
                 type="button"
                 onClick={() => onFormClick(item)}
                 className={cn(
-                  "rounded-lg p-3 text-left transition-colors",
+                  "rounded-lg p-2.5 text-left transition-colors",
                   selected
                     ? "border border-primary bg-primary/5"
                     : "border border-transparent bg-muted/40 hover:bg-muted",
@@ -733,9 +736,15 @@ function FormThumbnail(props: { form: ComicFormConfig }) {
 
   return (
     <div
-      className="w-full rounded-md bg-muted/60 p-1.5"
-      style={{ aspectRatio: `${form.ratioWidth} / ${form.ratioHeight}` }}
+      className="flex h-20 items-center justify-center rounded-md bg-muted/60 p-1.5"
     >
+      <div
+        className="h-full"
+        style={{
+          aspectRatio: `${form.ratioWidth} / ${form.ratioHeight}`,
+          maxWidth: "100%",
+        }}
+      >
       {layout === "vertical" ? (
         <div className="flex h-full flex-col gap-1">
           {blocks.map((index) => (
@@ -761,6 +770,7 @@ function FormThumbnail(props: { form: ComicFormConfig }) {
       ) : (
         <div className="h-full w-full rounded-sm" style={blockStyle(0)} />
       )}
+      </div>
     </div>
   );
 }

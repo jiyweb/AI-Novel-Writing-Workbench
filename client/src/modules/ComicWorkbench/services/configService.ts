@@ -103,6 +103,8 @@ const promptFormulaSchema = z.object({
   segmentTemplates: z.record(z.string(), z.string()),
   cameraDirectives: z.record(z.string(), z.string()),
   letteringHints: z.record(z.string(), z.string()),
+  letteringEmbedHints: z.record(z.string(), z.string()),
+  emptyShotHint: z.string().min(1),
   qualityWords: z.record(z.string(), z.string()),
   lineWeightLabels: z.record(z.string(), z.string()),
   lightingLabels: z.record(z.string(), z.string()),
@@ -132,6 +134,7 @@ const aiProvidersSchema = z.object({
       notes: z.string().optional(),
     }),
   ),
+  appProviderAliases: z.record(z.string(), z.string()).optional(),
   defaults: z.object({
     llmTimeoutMs: z.number().positive(),
     longTextTimeoutMs: z.number().positive(),
