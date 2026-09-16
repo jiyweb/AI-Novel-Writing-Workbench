@@ -5,18 +5,32 @@
  * - ZIP 打包：单张 PNG 按章节分文件夹归档；
  * - 条漫长图：每章纵向拼接为一张长图（可把台词按气泡布局合成进画面），
  *   多章时自动打成 ZIP。
+ * 另提供爆款运营文案：按发布平台（config/narrativeTemplates.json）用 AI
+ * 生成标题/摘要/发布正文/话题标签，一键复制直接发布。
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { FileArchive, Images, Loader2 } from "lucide-react";
+import { Copy, FileArchive, Images, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { useComicChapters, useComicProject } from "../../hooks/useComicQuery";
+import {
+  comicKeys,
+  useAiSettings,
+  useComicChapter,
+  useComicChapters,
+  useComicProject,
+  useMarketingCopy,
+} from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
+import { AiSettingsDialog } from "../settings/AiSettingsDialog";
 import { listPanels } from "../../db/comicDb";
-import { getFormById } from "../../services/configService";
+import { getFormById, narrativeTemplates } from "../../services/configService";
+import { isLlmReady } from "../../services/ai/aiConfigService";
+import { describeAiError } from "../../services/ai/llmClient";
+import { generateMarketingCopy } from "../../services/marketingService";
 import {
   collectPanelImages,
   downloadBlob,
@@ -24,13 +38,14 @@ import {
   renderChapterStrip,
   type PanelImage,
 } from "../../services/export/exportService";
-import type { ComicChapter, ComicProject } from "../../types";
+import type { ComicChapter, ComicProject, MarketingCopy } from "../../types";
 
 type ExportScope = "chapter" | "all";
 type ExportMethod = "zip" | "strip";
 
 export function ExportStepPanel(props: { projectId: string }) {
   const { projectId } = props;
+  const queryClient = useQueryClient();
   const chaptersQuery = useComicChapters(projectId);
   const chapters = useMemo(
     () => [...(chaptersQuery.data ?? [])].sort((a, b) => a.index - b.index),
@@ -40,10 +55,68 @@ export function ExportStepPanel(props: { projectId: string }) {
   const project = projectQuery.data ?? null;
   const chapterId = useComicWorkbenchStore((state) => state.chapterId);
   const openChapter = useComicWorkbenchStore((state) => state.openChapter);
+  const chapterQuery = useComicChapter(chapterId);
+  const chapter = chapterQuery.data ?? null;
+  const aiSettingsQuery = useAiSettings();
 
   const [scope, setScope] = useState<ExportScope>("chapter");
   const [method, setMethod] = useState<ExportMethod>("strip");
   const [includeDialogues, setIncludeDialogues] = useState(true);
+  // 运营文案（爆款增强）：平台本地选择，默认取配置的第一个平台
+  const [platformId, setPlatformId] = useState(
+    () => narrativeTemplates.platforms[0]?.id ?? "douyin",
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const copyQuery = useMarketingCopy(chapterId, platformId);
+
+  const marketingMutation = useMutation({
+    mutationFn: async () => {
+      if (!project) throw new Error("项目不存在");
+      if (!chapter) throw new Error("请先选择一个章节");
+      return generateMarketingCopy({
+        settings: aiSettingsQuery.data!,
+        project,
+        chapter,
+        platformId,
+      });
+    },
+    onSuccess: async (copy: MarketingCopy) => {
+      toast.success("运营文案已生成");
+      await queryClient.invalidateQueries({
+        queryKey: comicKeys.marketing(chapter?.id ?? "none", copy.platformId),
+      });
+    },
+    onError: (error: unknown) => toast.error(describeAiError(error)),
+  });
+
+  const runGenerateCopy = () => {
+    if (!isLlmReady(aiSettingsQuery.data)) {
+      toast.info("请先配置 AI 文本模型（API Key 只保存在本机）");
+      setSettingsOpen(true);
+      return;
+    }
+    marketingMutation.mutate();
+  };
+
+  const copyMarketingToClipboard = async (copy: MarketingCopy) => {
+    const platformName =
+      narrativeTemplates.platforms.find((item) => item.id === copy.platformId)?.name ?? "";
+    const text = [
+      copy.title,
+      "",
+      copy.post,
+      "",
+      copy.tags.map((tag) => `#${tag}`).join(" "),
+    ]
+      .join("\n")
+      .trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`已复制 ${platformName} 文案，可直接去发布`);
+    } catch {
+      toast.error("复制失败，请手动选择文本复制");
+    }
+  };
 
   const exportMutation = useMutation({
     mutationFn: async () => {
@@ -149,7 +222,75 @@ export function ExportStepPanel(props: { projectId: string }) {
             只包含已生成的画面；未生成的分镜会自动跳过
           </span>
         </section>
+
+        {/* 运营文案 */}
+        {chapter ? (
+          <section className="rounded-xl bg-muted/20 p-4">
+            <h3 className="text-sm font-semibold">爆款运营文案</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              为当前章节（第 {chapter.index} 章 {chapter.title}）生成贴合平台风格的标题、发布正文与话题标签
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {narrativeTemplates.platforms.map((platform) => (
+                <SegmentButton
+                  key={platform.id}
+                  active={platformId === platform.id}
+                  onClick={() => setPlatformId(platform.id)}
+                >
+                  {platform.name}
+                </SegmentButton>
+              ))}
+              <span className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={marketingMutation.isPending}
+                  onClick={runGenerateCopy}
+                >
+                  {marketingMutation.isPending ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : copyQuery.data ? (
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                  ) : (
+                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {copyQuery.data ? "重新生成文案" : "生成运营文案"}
+                </Button>
+              </span>
+            </div>
+            {copyQuery.data ? (
+              <div className="mt-4 flex flex-col gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">{copyQuery.data.title}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => void copyMarketingToClipboard(copyQuery.data!)}
+                  >
+                    <Copy className="mr-1 h-3 w-3" />
+                    复制全部
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">{copyQuery.data.summary}</p>
+                <p className="whitespace-pre-wrap rounded-lg bg-background/60 px-3 py-2.5 text-xs leading-relaxed">
+                  {copyQuery.data.post}
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {copyQuery.data.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="text-[10px]">
+                      #{tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : copyQuery.isFetching ? (
+              <p className="mt-3 text-xs text-muted-foreground">正在读取已保存的文案…</p>
+            ) : null}
+          </section>
+        ) : null}
       </div>
+      <AiSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

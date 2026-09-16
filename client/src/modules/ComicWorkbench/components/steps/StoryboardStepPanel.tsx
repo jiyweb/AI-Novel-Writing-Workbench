@@ -40,7 +40,7 @@ import {
 } from "../../hooks/useComicQuery";
 import { useComicWorkbenchStore } from "../../stores/workbenchStore";
 import { VirtualTextView } from "../../components/common/VirtualTextView";
-import { getDensityLevel, shotDensity } from "../../services/configService";
+import { getDensityLevel, narrativeTemplates, shotDensity } from "../../services/configService";
 import {
   applyDensityOverride,
   deletePanel,
@@ -84,6 +84,12 @@ export function StoryboardStepPanel(props: { projectId: string }) {
   );
   const aiSettings = useAiSettings();
   const llmReady = isLlmReady(aiSettings.data);
+  // 爆款增强：灵感导入选择的叙事模板，提示分镜节奏（元数据增强同样遵循）
+  const narrativeTemplate = chapter
+    ? narrativeTemplates.templates.find(
+        (item) => item.id === chapter.inspiration?.brief.narrativeTemplateId,
+      )
+    : undefined;
 
   const selectedPanel = panels.find((panel) => panel.id === selectedPanelId) ?? null;
 
@@ -228,6 +234,14 @@ export function StoryboardStepPanel(props: { projectId: string }) {
           </button>
         ))}
       </div>
+
+      {/* 叙事节奏提示（爆款增强：灵感导入时选择的叙事模板） */}
+      {narrativeTemplate ? (
+        <div className="rounded-lg bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">叙事节奏 · {narrativeTemplate.name}</span>
+          ：{narrativeTemplate.description}。AI 元数据增强会按此节奏判断镜头与情绪。
+        </div>
+      ) : null}
 
       {/* 工具条 */}
       <div className="flex flex-wrap items-center gap-3 border-b pb-3">

@@ -14,6 +14,7 @@ import {
   listScenes,
 } from "../db/comicDb";
 import { getAiSettings } from "../services/ai/aiConfigService";
+import { loadMarketingCopy } from "../services/marketingService";
 import type { AiConnectionSettings, WorkbenchSettings } from "../types";
 
 export const comicKeys = {
@@ -24,6 +25,8 @@ export const comicKeys = {
   panels: (chapterId: string) => ["comic-workbench", "panels", chapterId] as const,
   characters: (projectId: string) => ["comic-workbench", "characters", projectId] as const,
   scenes: (projectId: string) => ["comic-workbench", "scenes", projectId] as const,
+  marketing: (chapterId: string, platformId: string) =>
+    ["comic-workbench", "marketing", chapterId, platformId] as const,
   aiSettings: ["comic-workbench", "aiSettings"] as const,
   settings: ["comic-workbench", "settings"] as const,
 };
@@ -86,6 +89,21 @@ export function useAiSettings() {
   return useQuery({
     queryKey: comicKeys.aiSettings,
     queryFn: getAiSettings,
+  });
+}
+
+/** 章节在指定平台的运营文案（爆款增强，无则 undefined） */
+export function useMarketingCopy(
+  chapterId: string | null | undefined,
+  platformId: string | null | undefined,
+) {
+  return useQuery({
+    queryKey: comicKeys.marketing(chapterId ?? "none", platformId ?? "none"),
+    queryFn: () =>
+      chapterId && platformId
+        ? loadMarketingCopy(chapterId, platformId)
+        : Promise.resolve(undefined),
+    enabled: Boolean(chapterId && platformId),
   });
 }
 

@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { ComicChapter, ComicPanel } from "../../types";
 import { saveChapter, savePanels } from "../../db/comicDb";
 import { chatJson, describeAiError, type AiError } from "../ai/llmClient";
+import { narrativeTemplates } from "../configService";
 import type { AiConnectionSettings } from "../../types";
 
 /** 单次 LLM 调用处理的分镜数量（控制输出体积） */
@@ -124,7 +125,12 @@ function buildUserPrompt(chapter: ComicChapter, batch: ComicPanel[]): string {
       .slice(0, PANEL_TEXT_LIMIT);
     return `index=${panel.order}\n原文：${text}`;
   });
-  return `章节标题：${chapter.title}\n\n请为以下 ${batch.length} 个分镜输出元数据 JSON：\n\n${lines.join("\n\n")}`;
+  // 爆款增强：章节带叙事模板时注入节奏要求，让镜头/情绪判断贴合该节奏
+  const template = narrativeTemplates.templates.find(
+    (item) => item.id === chapter.inspiration?.brief.narrativeTemplateId,
+  );
+  const narrativeLine = template ? `\n叙事节奏要求：${template.promptDirective}` : "";
+  return `章节标题：${chapter.title}${narrativeLine}\n\n请为以下 ${batch.length} 个分镜输出元数据 JSON：\n\n${lines.join("\n\n")}`;
 }
 
 /** 元数据增强失败的统一文案（规则第12条错误兜底） */

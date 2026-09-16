@@ -34,6 +34,7 @@ import { AiError, describeAiError } from "../../services/ai/llmClient";
 import { generateImage } from "../../services/ai/imageClient";
 import { saveImageBlob } from "../../db/comicDb";
 import { changeProjectForm, changeProjectStyle } from "../../services/projectService";
+import { saveProjectPlatform } from "../../services/marketingService";
 import {
   deleteCustomPreset,
   saveCustomPreset,
@@ -41,6 +42,7 @@ import {
 import {
   comicForms,
   getStylePresetById,
+  narrativeTemplates,
   promptFormula,
   stylePresets,
 } from "../../services/configService";
@@ -179,6 +181,25 @@ export function FormStyleStepPanel(props: { projectId: string }) {
     },
     onError: (error: Error) => toast.error(`画风保存失败：${error.message}`),
   });
+
+  // ---------------------------------------------------------------------------
+  // 发布平台（爆款增强：推荐形态联动）
+  // ---------------------------------------------------------------------------
+
+  const platformMutation = useMutation({
+    mutationFn: (platformId: string | undefined) => saveProjectPlatform(projectId, platformId),
+    onSuccess: async () => {
+      await invalidateAll();
+    },
+    onError: (error: Error) => toast.error(`发布平台保存失败：${error.message}`),
+  });
+
+  const selectedPlatform = project?.platformId
+    ? narrativeTemplates.platforms.find((platform) => platform.id === project.platformId)
+    : undefined;
+  const recommendedForm = selectedPlatform
+    ? comicForms.find((item) => item.id === selectedPlatform.recommendedFormId)
+    : undefined;
 
   const savePresetMutation = useMutation({
     mutationFn: async () => {
@@ -497,6 +518,73 @@ export function FormStyleStepPanel(props: { projectId: string }) {
             保存为个人风格
           </Button>
         </div>
+      </section>
+
+      {/* 发布平台 */}
+      <section>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold">发布平台</h2>
+          <p className="text-xs text-muted-foreground">
+            选择主要发布平台后，会给出更合适的漫画形态建议与运营节奏参考
+          </p>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => platformMutation.mutate(undefined)}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs transition-colors",
+              !selectedPlatform
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            不限定
+          </button>
+          {narrativeTemplates.platforms.map((platform) => (
+            <button
+              key={platform.id}
+              type="button"
+              onClick={() => platformMutation.mutate(platform.id)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs transition-colors",
+                project?.platformId === platform.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {platform.name}
+            </button>
+          ))}
+        </div>
+        {selectedPlatform ? (
+          <div className="mt-3 rounded-lg bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+            <p>
+              <span className="font-medium text-foreground">{selectedPlatform.name}</span>
+              ：{selectedPlatform.pacingHint}
+            </p>
+            {recommendedForm ? (
+              project?.formId === recommendedForm.id ? (
+                <p className="mt-1 text-emerald-600 dark:text-emerald-400">
+                  当前「{recommendedForm.name}」形态正是 {selectedPlatform.name} 推荐形态
+                </p>
+              ) : (
+                <p className="mt-1 flex flex-wrap items-center gap-2">
+                  {selectedPlatform.name} 建议使用「{recommendedForm.name}」形态
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2.5 text-xs"
+                    disabled={platformMutation.isPending}
+                    onClick={() => recommendedForm && onFormClick(recommendedForm)}
+                  >
+                    切换为推荐形态
+                  </Button>
+                </p>
+              )
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {/* 生成测试图 */}
