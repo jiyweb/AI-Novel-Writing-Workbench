@@ -150,14 +150,24 @@ export default function SettingsPage() {
     removeProviderMutation.mutate(provider);
   };
 
-  const openProviderConfig = (provider: LLMProvider) => {
+  const openTextProviderConfig = (provider: LLMProvider) => {
     setActionResult("");
-    providerConfigFlow.openBuiltInDialog(provider);
+    providerConfigFlow.openBuiltInDialog(provider, "text");
   };
 
-  const openCreateCustomProvider = () => {
+  const openImageProviderConfig = (provider: LLMProvider) => {
     setActionResult("");
-    providerConfigFlow.openCreateCustomDialog();
+    providerConfigFlow.openBuiltInDialog(provider, "image");
+  };
+
+  const openCreateCustomTextProvider = () => {
+    setActionResult("");
+    providerConfigFlow.openCreateCustomDialog("text");
+  };
+
+  const openCreateCustomImageProvider = () => {
+    setActionResult("");
+    providerConfigFlow.openCreateCustomDialog("image");
   };
 
   return (
@@ -172,9 +182,9 @@ export default function SettingsPage() {
           refreshingModelProvider={refreshModelsMutation.isPending ? refreshModelsMutation.variables : undefined}
           refreshingBalanceProvider={refreshBalanceMutation.isPending ? refreshBalanceMutation.variables : undefined}
           reasoningProvider={modelControlsMutation.isPending ? modelControlsMutation.variables?.provider : undefined}
-          onCreateCustomProvider={openCreateCustomProvider}
+          onCreateCustomProvider={openCreateCustomTextProvider}
           onRemoveProvider={handleRemoveProvider}
-          onOpenConfig={openProviderConfig}
+          onOpenConfig={openTextProviderConfig}
           onTest={providerConfigFlow.testProviderCard}
           onRefreshModels={(provider) => {
             setActionResult("");
@@ -202,8 +212,8 @@ export default function SettingsPage() {
         />
         <ImageModelProvidersSection
           providers={providerConfigs}
-          onCreateCustomProvider={openCreateCustomProvider}
-          onOpenConfig={openProviderConfig}
+          onCreateCustomProvider={openCreateCustomImageProvider}
+          onOpenConfig={openImageProviderConfig}
           onRemoveProvider={handleRemoveProvider}
         />
       </div>
@@ -212,6 +222,7 @@ export default function SettingsPage() {
 
       <ProviderConfigDialog
         open={providerConfigFlow.isDialogOpen}
+        mode={providerConfigFlow.dialogMode}
         onOpenChange={(open) => {
           if (!open) {
             providerConfigFlow.resetDialogState();

@@ -22,6 +22,8 @@ export interface ProviderFormState {
 interface ProviderConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 弹窗分区模式：text = 只配文本模型；image = 只配生图模型；不传 = 两者都配（旧入口兼容） */
+  mode?: "text" | "image";
   isCreatingCustomProvider: boolean;
   isCustomDialog: boolean;
   editingConfig?: APIKeyStatus;
@@ -60,6 +62,7 @@ function DialogSection(props: { icon: ReactNode; title: string; description?: st
 export default function ProviderConfigDialog({
   open,
   onOpenChange,
+  mode,
   isCreatingCustomProvider,
   isCustomDialog,
   editingConfig,
@@ -84,7 +87,9 @@ export default function ProviderConfigDialog({
   const canSelectListedModels = selectableModels.length > 0;
   const imageModelOptions = editingConfig?.imageModels ?? [];
   const canSelectImageModels = imageModelOptions.length > 0;
-  const imageOnlyBuiltIn = !isCustomDialog && !isCreatingCustomProvider && editingConfig?.textCapable === false;
+  const showTextSection = mode !== "image";
+  const showImageSection = mode !== "text";
+  const imageOnlyBuiltIn = showImageSection && !showTextSection && !isCustomDialog && !isCreatingCustomProvider && editingConfig?.textCapable === false;
   const modelGuidance = editingConfig?.provider === "deepseek"
     ? "推荐使用 DeepSeek V4 Flash，兼顾中文长篇质量与响应速度；也可以选择其他可用模型。"
     : isCreatingCustomProvider
@@ -104,7 +109,7 @@ export default function ProviderConfigDialog({
               {submitLabel}
             </Button>
 
-            {imageOnlyBuiltIn ? null : (
+            {showTextSection && !imageOnlyBuiltIn ? (
               <Button
                 variant="secondary"
                 className="w-full sm:w-auto"
@@ -113,7 +118,7 @@ export default function ProviderConfigDialog({
               >
                 测试连接
               </Button>
-            )}
+            ) : null}
 
             {editingConfig?.kind === "custom" ? (
               <Button
@@ -150,9 +155,9 @@ export default function ProviderConfigDialog({
           <DialogSection
             icon={<KeyRound className="h-3.5 w-3.5 text-primary" />}
             title="连接凭据"
-            description={imageOnlyBuiltIn
-              ? "凭据用于这个厂商的生图模型，填写后即可生成角色图、封面和漫画图。"
-              : "同一套凭据同时用于下面的文本模型和生图模型，只需填写一次。"}
+            description={showTextSection
+              ? "同一套凭据同时用于下面的文本模型和生图模型，只需填写一次。"
+              : "凭据用于这个厂商的生图模型，填写后即可生成角色图、封面和漫画图。"}
           >
             <div className="space-y-1.5">
               <Input
@@ -235,13 +240,14 @@ export default function ProviderConfigDialog({
             ) : null}
           </DialogSection>
 
-          {imageOnlyBuiltIn ? (
-            <div className="space-y-1.5 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground border-t border-border/60 pt-5">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground"><Bot className="h-3.5 w-3.5 text-primary" /> 文本模型</div>
-              <div>这个厂商只提供图片生成模型，不能用于写作、审稿等文字任务；文字创作请在「文本模型」分区选择其他厂商。</div>
-            </div>
-          ) : (
-            <DialogSection
+          {showTextSection ? (
+            imageOnlyBuiltIn ? (
+              <div className="space-y-1.5 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground border-t border-border/60 pt-5">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground"><Bot className="h-3.5 w-3.5 text-primary" /> 文本模型</div>
+                <div>这个厂商只提供图片生成模型，不能用于写作、审稿等文字任务；文字创作请在「文本模型」分区选择其他厂商。</div>
+              </div>
+            ) : (
+              <DialogSection
               icon={<Bot className="h-3.5 w-3.5 text-primary" />}
               title="文本模型"
               description="用于写作、大纲、审稿、改写等全部文字任务。"
@@ -270,40 +276,43 @@ export default function ProviderConfigDialog({
                   onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))}
                 />
               </div>
-            </DialogSection>
-          )}
+              </DialogSection>
+            )
+          ) : null}
 
-          <DialogSection
-            icon={<Image className="h-3.5 w-3.5 text-primary" />}
-            title={imageOnlyBuiltIn ? "生图模型" : "生图模型（可选）"}
-            description={imageOnlyBuiltIn
-              ? "用于角色形象、小说封面、漫画格子等图片生成；这个厂商只提供生图能力。"
-              : "用于角色形象、小说封面、漫画格子等图片生成；留空则这个厂商只用于文字任务。"}
-            withDivider
-          >
-            {canSelectImageModels ? (
-              <div className="space-y-1">
-                <SearchableSelect
-                  value={form.imageModel}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, imageModel: value }))}
-                  options={imageModelOptions.map((model) => ({ value: model }))}
-                  placeholder="选择生图模型"
-                  searchPlaceholder="搜索生图模型"
-                  emptyText="没有可用的生图模型"
-                />
+          {showImageSection ? (
+            <DialogSection
+              icon={<Image className="h-3.5 w-3.5 text-primary" />}
+              title={mode === "image" ? "生图模型" : "生图模型（可选）"}
+              description={showTextSection
+                ? "用于角色形象、小说封面、漫画格子等图片生成；留空则这个厂商只用于文字任务。"
+                : "用于角色形象、小说封面、漫画格子等图片生成。"}
+              withDivider
+            >
+              {canSelectImageModels ? (
+                <div className="space-y-1">
+                  <SearchableSelect
+                    value={form.imageModel}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, imageModel: value }))}
+                    options={imageModelOptions.map((model) => ({ value: model }))}
+                    placeholder="选择生图模型"
+                    searchPlaceholder="搜索生图模型"
+                    emptyText="没有可用的生图模型"
+                  />
+                </div>
+              ) : null}
+              <Input
+                value={form.imageModel}
+                placeholder={editingConfig?.defaultImageModel ?? "输入生图模型名"}
+                onChange={(event) => setForm((prev) => ({ ...prev, imageModel: event.target.value }))}
+              />
+              <div className="text-xs text-muted-foreground">
+                {editingConfig?.provider === "grsai"
+                  ? "GrsAI 生成图片需要排队，系统会自动等待结果。"
+                  : "生图会调用这个厂商的图片生成接口。"}
               </div>
-            ) : null}
-            <Input
-              value={form.imageModel}
-              placeholder={editingConfig?.defaultImageModel ?? "输入生图模型名"}
-              onChange={(event) => setForm((prev) => ({ ...prev, imageModel: event.target.value }))}
-            />
-            <div className="text-xs text-muted-foreground">
-              {editingConfig?.provider === "grsai"
-                ? "GrsAI 生成图片需要排队，系统会自动等待结果。"
-                : "生图会调用这个厂商的图片生成接口。"}
-            </div>
-          </DialogSection>
+            </DialogSection>
+          ) : null}
 
           <DialogSection
             icon={<SlidersHorizontal className="h-3.5 w-3.5 text-primary" />}

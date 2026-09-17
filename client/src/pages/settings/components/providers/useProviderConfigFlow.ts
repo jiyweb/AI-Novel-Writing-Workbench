@@ -23,6 +23,12 @@ const EMPTY_PROVIDER_FORM: ProviderFormState = {
   requestIntervalMs: "0",
 };
 
+/**
+ * 弹窗分区模式：text = 只配文本模型，image = 只配生图模型。
+ * 由打开入口决定，保证「文本模型只配文本、生图模型只配生图」。
+ */
+export type ProviderDialogMode = "text" | "image";
+
 function formatConnectionTestResult(response: Awaited<ReturnType<typeof testLLMConnection>>): string {
   const latency = response.data?.latency ?? 0;
   const plain = response.data?.plain;
@@ -55,6 +61,7 @@ export function useProviderConfigFlow(options: {
   const queryClient = useQueryClient();
   const [editingProvider, setEditingProvider] = useState<LLMProvider | "">("");
   const [isCreatingCustomProvider, setIsCreatingCustomProvider] = useState(false);
+  const [dialogMode, setDialogMode] = useState<ProviderDialogMode>("text");
   const [form, setForm] = useState<ProviderFormState>(EMPTY_PROVIDER_FORM);
   const [dialogTestResult, setDialogTestResult] = useState("");
   const [providerTestResults, setProviderTestResults] = useState<Record<string, string>>({});
@@ -72,6 +79,7 @@ export function useProviderConfigFlow(options: {
   const resetDialogState = () => {
     setEditingProvider("");
     setIsCreatingCustomProvider(false);
+    setDialogMode("text");
     setForm(EMPTY_PROVIDER_FORM);
     setDialogTestResult("");
     setPreviewModels([]);
@@ -172,13 +180,14 @@ export function useProviderConfigFlow(options: {
     mutationFn: testLLMConnection,
   });
 
-  const openBuiltInDialog = (provider: LLMProvider) => {
+  const openBuiltInDialog = (provider: LLMProvider, mode: ProviderDialogMode = "text") => {
     const config = providers.find((item) => item.provider === provider);
     if (!config) {
       return;
     }
     setIsCreatingCustomProvider(false);
     setEditingProvider(provider);
+    setDialogMode(mode);
     setForm({
       displayName: config.displayName ?? config.name,
       key: "",
@@ -194,9 +203,10 @@ export function useProviderConfigFlow(options: {
     setPreviewModelsResult("");
   };
 
-  const openCreateCustomDialog = () => {
+  const openCreateCustomDialog = (mode: ProviderDialogMode = "text") => {
     setEditingProvider("");
     setIsCreatingCustomProvider(true);
+    setDialogMode(mode);
     setForm(EMPTY_PROVIDER_FORM);
     setDialogTestResult("");
     setPreviewModels([]);
@@ -222,8 +232,8 @@ export function useProviderConfigFlow(options: {
       createCustomProviderMutation.mutate({
         name: form.displayName.trim(),
         key: form.key.trim() ? form.key : undefined,
-        model: form.model.trim() || undefined,
-        imageModel: form.imageModel.trim(),
+        model: dialogMode === "image" ? undefined : form.model.trim() || undefined,
+        imageModel: dialogMode === "text" ? undefined : form.imageModel.trim(),
         baseURL: form.baseURL.trim(),
         authMode: form.authMode,
         concurrencyLimit: Number.parseInt(form.concurrencyLimit, 10) || 0,
@@ -238,8 +248,8 @@ export function useProviderConfigFlow(options: {
       provider: editingProvider,
       displayName: isCustomDialog ? form.displayName.trim() || undefined : undefined,
       key: form.key.trim() ? form.key : undefined,
-      model: form.model.trim() || undefined,
-      imageModel: form.imageModel.trim(),
+      model: dialogMode === "image" ? undefined : form.model.trim() || undefined,
+      imageModel: dialogMode === "text" ? undefined : form.imageModel.trim(),
       baseURL: form.baseURL,
       authMode: isCustomDialog ? form.authMode : undefined,
       concurrencyLimit: Number.parseInt(form.concurrencyLimit, 10) || 0,
@@ -309,7 +319,7 @@ export function useProviderConfigFlow(options: {
   const isSavingProvider = saveMutation.isPending || createCustomProviderMutation.isPending;
   const submitDisabled = isSavingProvider
     || previewCustomProviderModelsMutation.isPending
-    || (!isCreatingCustomProvider && editingConfig?.textCapable !== false && !form.model.trim())
+    || (dialogMode !== "image" && !isCreatingCustomProvider && editingConfig?.textCapable !== false && !form.model.trim())
     || (isCustomDialog && !form.displayName.trim())
     || (isCreatingCustomProvider && !form.baseURL.trim())
     || (!isCustomDialog && editingConfig?.requiresApiKey !== false && !form.key.trim() && !editingConfig?.isConfigured);
@@ -324,6 +334,7 @@ export function useProviderConfigFlow(options: {
     isCreatingCustomProvider,
     isCustomDialog,
     isDialogOpen,
+    dialogMode,
     selectableModels,
     previewModelsResult,
     isPreviewingModels: previewCustomProviderModelsMutation.isPending,

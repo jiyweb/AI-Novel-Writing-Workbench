@@ -498,7 +498,7 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
                             "rounded-xl border p-4 text-left transition hover:border-primary/50 hover:bg-primary/5",
                             ready ? "border-primary/25" : "border-dashed",
                           )}
-                          onClick={() => providerConfigFlow.openBuiltInDialog(item.provider)}
+                          onClick={() => providerConfigFlow.openBuiltInDialog(item.provider, "image")}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -525,7 +525,7 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
                     <button
                       type="button"
                       className="rounded-xl border border-dashed p-4 text-left transition hover:border-primary/50 hover:bg-primary/5"
-                      onClick={() => providerConfigFlow.openCreateCustomDialog()}
+                      onClick={() => providerConfigFlow.openCreateCustomDialog("image")}
                     >
                       <div className="flex items-center gap-2 font-semibold"><ServerCog className="h-4 w-4" /> 添加第三方厂商</div>
                       <div className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -750,6 +750,7 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
 
     <ProviderConfigDialog
       open={providerConfigFlow.isDialogOpen}
+      mode={providerConfigFlow.dialogMode}
       onOpenChange={(open) => {
         if (!open) {
           providerConfigFlow.resetDialogState();
