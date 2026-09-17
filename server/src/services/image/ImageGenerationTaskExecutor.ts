@@ -113,6 +113,9 @@ function buildMissingOwnerError(sceneType: SupportedImageSceneType): string {
   if (sceneType === "book_analysis_character") {
     return "Book analysis character was not found.";
   }
+  if (sceneType === "comic_panel") {
+    return "Comic panel was not found.";
+  }
   return "Base character was not found.";
 }
 

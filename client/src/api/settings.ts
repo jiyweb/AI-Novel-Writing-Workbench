@@ -127,6 +127,11 @@ export interface LLMSelectionSettings {
   maxTokens?: number;
 }
 
+export interface ImageSelectionSettings {
+  provider: LLMProvider;
+  model: string;
+}
+
 export interface ModelRoutesResponse {
   taskTypes: ModelRouteTaskType[];
   routes: Array<{
@@ -313,6 +318,28 @@ export async function getLLMSelectionSetting() {
 
 export async function saveLLMSelectionSetting(payload: LLMSelectionSettings) {
   const { data } = await apiClient.put<ApiResponse<LLMSelectionSettings>>("/settings/llm-selection", payload);
+  return data;
+}
+
+export async function getImageSelectionSettings() {
+  const { data } = await apiClient.get<ApiResponse<ImageSelectionSettings | null>>("/settings/image-selection");
+  return data;
+}
+
+export async function saveImageSelectionSettings(payload: ImageSelectionSettings) {
+  const { data } = await apiClient.put<ApiResponse<ImageSelectionSettings>>("/settings/image-selection", payload);
+  return data;
+}
+
+export async function saveProviderImageModelList(provider: LLMProvider, models: string[]) {
+  const { data } = await apiClient.put<
+    ApiResponse<{
+      provider: string;
+      imageModels: string[];
+      currentImageModel: string | null;
+      defaultImageModel: string | null;
+    }>
+  >(`/settings/api-keys/${provider}/image-models`, { models });
   return data;
 }
 

@@ -35,7 +35,10 @@ import {
   getDefaultImageModel,
   getImageModelOptions,
   getProviderImageModelMap,
+  getProviderImageModels,
+  getProviderImageModelsMap,
   saveProviderImageModel,
+  saveProviderImageModels,
 } from "../services/settings/ProviderImageSettingsService";
 import { getRagEmbeddingModelOptions } from "../services/settings/RagEmbeddingModelService";
 import { getLLMSelectionSettings } from "../services/settings/LLMSelectionSettingsService";
@@ -55,6 +58,7 @@ import {
   saveStyleEngineRuntimeSettings,
 } from "../services/settings/StyleEngineRuntimeSettingsService";
 import { registerCustomProviderRoutes } from "./settings/customProviderRoutes";
+import { registerImageSelectionRoutes } from "./settings/imageSelectionRoutes";
 import { registerLLMSelectionRoutes } from "./settings/llmSelectionRoutes";
 
 const router = Router();
@@ -82,6 +86,10 @@ const upsertApiKeySchema = z.object({
 
 const ragEmbeddingProviderSchema = z.object({
   provider: z.string().trim().min(1).max(120),
+});
+
+const imageModelListSchema = z.object({
+  models: z.array(z.string().trim().min(1).max(240)).max(200),
 });
 
 const ragSettingsSchema = z.object({
@@ -232,6 +240,7 @@ function buildBuiltInProviderStatus(
     requestIntervalMs?: number | null;
   } | undefined,
   imageModel: string | undefined,
+  imageModelList: string[] | undefined,
 ): BuiltInProviderStatus {
   const savedKey = normalizeOptionalText(item?.key);
   const envKey = getProviderEnvApiKey(provider);
@@ -271,7 +280,10 @@ function buildBuiltInProviderStatus(
     currentBaseURL,
     currentAuthMode: "bearer",
     models,
-    imageModels: Array.from(new Set([...getImageModelOptions(provider), currentImageModel ?? ""].filter(Boolean))),
+    imageModels: Array.from(new Set([
+      ...(imageModelList ?? getImageModelOptions(provider)),
+      currentImageModel ?? "",
+    ].filter(Boolean))),
     defaultModel: PROVIDERS[provider].defaultModel,
     defaultImageModel: getDefaultImageModel(provider) ?? null,
     defaultBaseURL: PROVIDERS[provider].baseURL,
@@ -302,7 +314,7 @@ function buildCustomProviderStatus(item: {
   hiddenModels?: string | null;
   concurrencyLimit?: number | null;
   requestIntervalMs?: number | null;
-}, imageModel: string | undefined): CustomProviderStatus {
+}, imageModel: string | undefined, imageModelList: string[] | undefined): CustomProviderStatus {
   const currentModel = normalizeOptionalText(item.model) ?? "";
   const currentBaseURL = normalizeOptionalText(item.baseURL) ?? "";
   const currentAuthMode = normalizeProviderAuthMode(item.authMode);
@@ -319,7 +331,7 @@ function buildCustomProviderStatus(item: {
     currentBaseURL,
     currentAuthMode,
     models,
-    imageModels: imageModel ? [imageModel] : [],
+    imageModels: Array.from(new Set([...(imageModelList ?? []), imageModel ?? ""].filter(Boolean))),
     defaultModel: currentModel,
     defaultImageModel: null,
     defaultBaseURL: currentBaseURL,
@@ -340,6 +352,7 @@ function buildCustomProviderStatus(item: {
 router.use(authMiddleware);
 registerCustomProviderRoutes(router);
 registerLLMSelectionRoutes(router);
+registerImageSelectionRoutes(router);
 
 router.get("/style-engine-runtime", async (_req, res, next) => {
   try {
@@ -519,12 +532,22 @@ router.get("/api-keys", async (_req, res, next) => {
       ...keys.map((item) => item.provider),
     ]));
     const imageModelMap = await getProviderImageModelMap(allProviders);
+    const imageModelListMap = await getProviderImageModelsMap(allProviders);
     const builtInProviders = SUPPORTED_PROVIDERS.map((provider) =>
-      buildBuiltInProviderStatus(provider, keyMap.get(provider), imageModelMap.get(provider)),
+      buildBuiltInProviderStatus(
+        provider,
+        keyMap.get(provider),
+        imageModelMap.get(provider),
+        imageModelListMap.get(provider),
+      ),
     );
     const customProviders = keys
       .filter((item) => !isBuiltInProvider(item.provider))
-      .map((item) => buildCustomProviderStatus(item, imageModelMap.get(item.provider)));
+      .map((item) => buildCustomProviderStatus(
+        item,
+        imageModelMap.get(item.provider),
+        imageModelListMap.get(item.provider),
+      ));
     const data = [...builtInProviders, ...customProviders];
     res.status(200).json({
       success: true,
@@ -660,7 +683,7 @@ router.put(
         ? await saveProviderImageModel(provider, body.imageModel)
         : await getProviderImageModelMap([provider]).then((map) => map.get(provider) ?? null);
       const imageModels = Array.from(new Set([
-        ...getImageModelOptions(provider),
+        ...(await getProviderImageModels(provider)),
         currentImageModel ?? "",
       ].filter(Boolean)));
 
@@ -742,6 +765,37 @@ router.put(
         textCapable: boolean;
         supportsImageGeneration: boolean;
       }>);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.put(
+  "/api-keys/:provider/image-models",
+  validate({ params: providerSchema, body: imageModelListSchema }),
+  async (req, res, next) => {
+    try {
+      const { provider } = req.params as z.infer<typeof providerSchema>;
+      const body = req.body as z.infer<typeof imageModelListSchema>;
+      const existing = await secretStore.getProvider(provider);
+      if (!isBuiltInProvider(provider) && !existing) {
+        throw new AppError("没有找到这个自定义厂商。", 404);
+      }
+
+      const savedModels = await saveProviderImageModels(provider, body.models);
+      const currentImageModel = await getProviderImageModelMap([provider]).then((map) => map.get(provider) ?? null);
+      const data = {
+        provider,
+        imageModels: Array.from(new Set([...savedModels, currentImageModel ?? ""].filter(Boolean))),
+        currentImageModel: currentImageModel ?? null,
+        defaultImageModel: getDefaultImageModel(provider) ?? null,
+      };
+      res.status(200).json({
+        success: true,
+        data,
+        message: "生图模型列表已保存。",
+      } satisfies ApiResponse<typeof data>);
     } catch (error) {
       next(error);
     }

@@ -28,6 +28,13 @@
   - 没有任何可用厂商时，页面不放一个点击必失败的下拉，而是显示「去模型设置配置」入口。
 - **文本 LLM 调用严禁透传生图厂商**：`textCapable:false` 的厂商（grsai）只有图像接口，分话大纲、分格脚本等结构化文本调用不传 provider（走文本模型路由），否则会请求到不存在的对话接口而报错。
 
+### 全局默认生图模型（image.currentSelection）
+
+- 「模型设置」提供全局默认生图模型选择，保存在 `image.currentSelection`（`{provider, model}`），与文本的 `llm.currentSelection` 对称；读写入口是 `GET/PUT /settings/image-selection`。
+- 图片生成任务的解析顺序固定为：请求显式带 provider/model 时以请求为准（场景级覆盖）；两者都未指定时使用全局默认生图模型；未保存全局默认时回退到厂商当前生图模型（`resolveImageModel`）或内置默认。不要在调用方各自实现另一套默认逻辑。
+- 每个厂商的可选生图模型列表持久化在 `provider.imageModels.<provider>`（JSON 数组；空数组是合法状态，表示该厂商不再提供生图模型）；从未保存过时回退内置预设。维护入口是 `PUT /settings/api-keys/:provider/image-models`，保存时若当前生效模型不在新列表中会一并清除并回退 env/默认值。
+- 漫画生图偏好「跟随主程序」指跟随全局默认生图模型：客户端先读 `image.currentSelection`，读不到再回落第一个可用厂商，与后端解析顺序保持一致。
+
 ### 厂商能力标记（textCapable）
 
 - `PROVIDERS` 元数据支持 `textCapable?: boolean`，默认 `true`；`providerSupportsText(provider)` 是统一判断入口，自定义厂商恒为 `true`。

@@ -60,60 +60,127 @@ function buildCustomProviderId(name: string): LLMProvider {
   return `custom_${normalized || "provider"}`;
 }
 
-async function listProviderOptions(): Promise<QuickSetupProviderOption[]> {
+interface ProviderOptionsResult {
+  /** 全量厂商（含与内置同名的自定义记录），用于任务路由与当前选择的解析 */
+  allOptions: QuickSetupProviderOption[];
+  /** 展示用厂商列表：与内置厂商同名的自定义记录已并入内置卡片，避免出现重复厂商 */
+  displayOptions: QuickSetupProviderOption[];
+  /** 被合并的自定义厂商 id → 承接它的内置厂商 id */
+  mergedIntoBuiltin: Map<LLMProvider, LLMProvider>;
+}
+
+async function listProviderOptions(): Promise<ProviderOptionsResult> {
   const records = await secretStore.listProviders();
   const recordByProvider = new Map(records.map((record) => [record.provider, record]));
-  const builtins: QuickSetupProviderOption[] = SUPPORTED_PROVIDERS
-    .filter((provider) => providerSupportsText(provider))
-    .map((provider) => {
-      const config = PROVIDERS[provider];
-      const record = recordByProvider.get(provider);
-      const currentModel = normalizeOptionalText(record?.model)
-        ?? getProviderEnvModel(provider)
-        ?? config.defaultModel;
-      const currentBaseURL = normalizeOptionalText(record?.baseURL)
-        ?? getProviderEnvBaseUrl(provider)
-        ?? config.baseURL;
-      const hasRequiredKey = !providerRequiresApiKey(provider)
-        || Boolean(normalizeOptionalText(record?.key) ?? getProviderEnvApiKey(provider));
-      return {
-        id: provider,
-        kind: "builtin",
-        name: config.name,
-        requiresApiKey: providerRequiresApiKey(provider),
-        configured: (record?.isActive ?? true) && hasRequiredKey && Boolean(currentModel),
-        active: record?.isActive ?? true,
-        currentModel,
-        defaultModel: config.defaultModel,
-        currentBaseURL,
-        defaultBaseURL: config.baseURL,
-        models: Array.from(new Set([...(config.models ?? []), currentModel].filter(Boolean))),
-      };
+  const builtinNameById = new Map(
+    SUPPORTED_PROVIDERS
+      .filter((provider) => providerSupportsText(provider))
+      .map((provider) => [PROVIDERS[provider].name.toLowerCase(), provider] as const),
+  );
+  const builtins: QuickSetupProviderOption[] = [];
+  const builtinExplicit = new Map<LLMProvider, { model?: string; baseURL?: string }>();
+  for (const provider of SUPPORTED_PROVIDERS.filter((item) => providerSupportsText(item))) {
+    const config = PROVIDERS[provider];
+    const record = recordByProvider.get(provider);
+    const explicitModel = normalizeOptionalText(record?.model) ?? getProviderEnvModel(provider);
+    const explicitBaseURL = normalizeOptionalText(record?.baseURL) ?? getProviderEnvBaseUrl(provider);
+    builtinExplicit.set(provider, { model: explicitModel, baseURL: explicitBaseURL });
+    const currentModel = explicitModel ?? config.defaultModel;
+    const currentBaseURL = explicitBaseURL ?? config.baseURL;
+    const hasRequiredKey = !providerRequiresApiKey(provider)
+      || Boolean(normalizeOptionalText(record?.key) ?? getProviderEnvApiKey(provider));
+    builtins.push({
+      id: provider,
+      kind: "builtin",
+      name: config.name,
+      requiresApiKey: providerRequiresApiKey(provider),
+      configured: (record?.isActive ?? true) && hasRequiredKey && Boolean(currentModel),
+      active: record?.isActive ?? true,
+      currentModel,
+      defaultModel: config.defaultModel,
+      currentBaseURL,
+      defaultBaseURL: config.baseURL,
+      models: Array.from(new Set([...(config.models ?? []), currentModel].filter(Boolean))),
     });
-  const customs: QuickSetupProviderOption[] = records
-    .filter((record) => !isBuiltInProvider(record.provider))
-    .map((record) => {
-      const currentModel = normalizeOptionalText(record.model) ?? "";
-      const currentBaseURL = normalizeOptionalText(record.baseURL) ?? "";
-      return {
-        id: record.provider,
-        kind: "custom",
-        name: normalizeOptionalText(record.displayName) ?? record.provider,
-        requiresApiKey: false,
-        configured: record.isActive && Boolean(currentModel && currentBaseURL),
-        active: record.isActive,
-        currentModel,
-        defaultModel: currentModel,
-        currentBaseURL,
-        defaultBaseURL: currentBaseURL,
-        models: currentModel ? [currentModel] : [],
-      };
+  }
+  const builtinById = new Map(builtins.map((option) => [option.id, option]));
+  const mergedIntoBuiltin = new Map<LLMProvider, LLMProvider>();
+  const customs: QuickSetupProviderOption[] = [];
+  for (const record of records) {
+    if (isBuiltInProvider(record.provider)) {
+      continue;
+    }
+    const displayName = normalizeOptionalText(record.displayName) ?? record.provider;
+    const mergeTarget = builtinNameById.get(displayName.toLowerCase());
+    if (mergeTarget) {
+      // 历史第三方记录与内置厂商同名（如内置接入前手工添加的厂商）：
+      // 并入内置卡片展示，避免同一厂商出现两条；运行时数据保持不变。
+      mergedIntoBuiltin.set(record.provider, mergeTarget);
+      const builtin = builtinById.get(mergeTarget);
+      if (!builtin) {
+        continue;
+      }
+      const currentModel = normalizeOptionalText(record.model);
+      const currentBaseURL = normalizeOptionalText(record.baseURL);
+      const explicit = builtinExplicit.get(mergeTarget);
+      if (currentModel && !explicit?.model) {
+        builtin.currentModel = currentModel;
+        builtin.models = Array.from(new Set([...builtin.models, currentModel]));
+      }
+      if (currentBaseURL && !explicit?.baseURL) {
+        builtin.currentBaseURL = currentBaseURL;
+      }
+      if (record.isActive && Boolean(currentModel && currentBaseURL)) {
+        builtin.configured = true;
+      }
+      continue;
+    }
+    const currentModel = normalizeOptionalText(record.model) ?? "";
+    const currentBaseURL = normalizeOptionalText(record.baseURL) ?? "";
+    customs.push({
+      id: record.provider,
+      kind: "custom",
+      name: displayName,
+      requiresApiKey: false,
+      configured: record.isActive && Boolean(currentModel && currentBaseURL),
+      active: record.isActive,
+      currentModel,
+      defaultModel: currentModel,
+      currentBaseURL,
+      defaultBaseURL: currentBaseURL,
+      models: currentModel ? [currentModel] : [],
     });
-  return [...builtins, ...customs];
+  }
+  const allOptions = [...builtins, ...customs];
+  return { allOptions, displayOptions: [...builtins, ...customs], mergedIntoBuiltin };
+}
+
+/**
+ * 自定义厂商记录与同名内置厂商合并后，快速设置弹窗只展示内置卡片；
+ * 完成配置时允许回退使用被合并记录的 Key / 地址，避免用户重复粘贴密钥。
+ */
+async function resolveMergedCustomFallback(
+  provider: LLMProvider,
+): Promise<{ key?: string; baseURL?: string }> {
+  if (!isBuiltInProvider(provider)) {
+    return {};
+  }
+  const builtinName = PROVIDERS[provider].name.toLowerCase();
+  const records = await secretStore.listProviders();
+  const fallback = records.find((record) => !isBuiltInProvider(record.provider)
+    && (normalizeOptionalText(record.displayName) ?? record.provider).toLowerCase()
+    === builtinName);
+  if (!fallback) {
+    return {};
+  }
+  return {
+    key: normalizeOptionalText(fallback.key),
+    baseURL: normalizeOptionalText(fallback.baseURL),
+  };
 }
 
 export async function getQuickSetupStatus(): Promise<QuickSetupStatus> {
-  const [providers, selection, resolvedRoutes] = await Promise.all([
+  const [providerOptions, selection, resolvedRoutes] = await Promise.all([
     listProviderOptions(),
     getLLMSelectionSettings(),
     Promise.all(MODEL_ROUTE_TASK_TYPES.map(async (taskType) => ({
@@ -121,7 +188,8 @@ export async function getQuickSetupStatus(): Promise<QuickSetupStatus> {
       route: await resolveModel(taskType),
     }))),
   ]);
-  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  const providers = providerOptions.displayOptions;
+  const providerById = new Map(providerOptions.allOptions.map((provider) => [provider.id, provider]));
   const missingTaskTypes = resolvedRoutes
     .filter(({ route }) => {
       const provider = providerById.get(route.provider);
@@ -131,11 +199,15 @@ export async function getQuickSetupStatus(): Promise<QuickSetupStatus> {
   const plannerRoute = resolvedRoutes.find(({ taskType }) => taskType === "planner")?.route;
   const fallbackProvider = plannerRoute && providerById.get(plannerRoute.provider)?.configured
     ? providerById.get(plannerRoute.provider)
-    : providers.find((provider) => provider.configured);
+    : providerOptions.allOptions.find((provider) => provider.configured);
   const selectedProviderOption = selection && providerById.get(selection.provider)?.configured
     ? providerById.get(selection.provider)
     : fallbackProvider;
-  const selectedProvider = selectedProviderOption?.id ?? null;
+  // 被合并的同名自定义厂商展示为内置卡片；把当前选择重映射到承接它的内置厂商，
+  // 弹窗才能正确高亮用户正在使用的厂商。
+  const selectedProvider = selectedProviderOption
+    ? providerOptions.mergedIntoBuiltin.get(selectedProviderOption.id) ?? selectedProviderOption.id
+    : null;
   const selectedModel = selection && selectedProvider === selection.provider
     ? selection.model
     : selectedProviderOption?.currentModel ?? null;
@@ -181,10 +253,15 @@ async function resolveProviderInput(input: CompleteQuickSetupRequest): Promise<{
       throw new AppError("请选择一个可用的内置模型厂商。", 400);
     }
     const existing = await secretStore.getProvider(input.provider);
+    const mergedFallback = await resolveMergedCustomFallback(input.provider);
     return {
       provider: input.provider,
-      existingKey: normalizeOptionalText(existing?.key) ?? getProviderEnvApiKey(input.provider),
-      existingBaseURL: normalizeOptionalText(existing?.baseURL) ?? getProviderEnvBaseUrl(input.provider),
+      existingKey: normalizeOptionalText(existing?.key)
+        ?? getProviderEnvApiKey(input.provider)
+        ?? mergedFallback.key,
+      existingBaseURL: normalizeOptionalText(existing?.baseURL)
+        ?? getProviderEnvBaseUrl(input.provider)
+        ?? mergedFallback.baseURL,
     };
   }
   const displayName = normalizeOptionalText(input.customProviderName);

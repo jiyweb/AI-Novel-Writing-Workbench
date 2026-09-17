@@ -5,7 +5,7 @@
  * - 分镜生图模型的覆盖选择（存 IndexedDB WorkbenchSettings.ai，null = 跟随主程序）
  * - 主程序模型状态查询（就绪判断 + 生图选项列表 + 覆盖选择解析）
  */
-import { getAPIKeySettings, getLLMSelectionSetting } from "@/api/settings";
+import { getAPIKeySettings, getImageSelectionSettings, getLLMSelectionSetting } from "@/api/settings";
 import { aiProvidersConfig } from "../configService";
 import { getSettings, saveSettings } from "../../db/comicDb";
 import { AiError } from "./llmClient";
@@ -93,7 +93,8 @@ export async function fetchMainAiStatus(): Promise<MainAiStatus> {
 
 /**
  * 把覆盖选择解析成具体 provider/model：显式选择优先；
- * 所选厂商已不可用或未选择时，回落到主程序第一个可用生图厂商。
+ * 未选择时跟随主程序的全局默认生图模型；
+ * 主程序没有保存默认时，回落到主程序第一个可用生图厂商。
  */
 export async function resolveImageChoice(
   choice: ComicImageModelChoice | null | undefined,
@@ -102,6 +103,21 @@ export async function resolveImageChoice(
   const options = status.imageOptions;
 
   const hit = choice?.providerId ? options.find((o) => o.provider === choice.providerId) : undefined;
+  if (!hit) {
+    const selectionRes = await getImageSelectionSettings().catch(() => null);
+    const selection = selectionRes?.data ?? null;
+    const selectionTarget = selection
+      ? options.find((o) => o.provider === selection.provider)
+      : undefined;
+    if (selectionTarget && selection) {
+      const model = selection.model
+        || selectionTarget.currentImageModel
+        || selectionTarget.defaultImageModel
+        || selectionTarget.models[0]
+        || undefined;
+      return { provider: selectionTarget.provider, model };
+    }
+  }
   const target = hit ?? options[0];
   if (!target) {
     throw new AiError("notConfigured", "主程序尚未配置可用的生图模型，请先在主程序「模型设置」中配置");

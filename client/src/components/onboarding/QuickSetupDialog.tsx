@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
   CircleAlert,
+  Images,
   KeyRound,
   Loader2,
   PlugZap,
   ServerCog,
   Sparkles,
+  Type,
 } from "lucide-react";
 import type {
   CompleteQuickSetupRequest,
@@ -20,13 +23,28 @@ import type {
 } from "@ai-novel/shared/types/onboarding";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { completeQuickSetup } from "@/api/onboarding";
-import { previewCustomProviderModels } from "@/api/settings";
+import {
+  getAPIKeySettings,
+  getImageSelectionSettings,
+  previewCustomProviderModels,
+  saveImageSelectionSettings,
+} from "@/api/settings";
 import { queryKeys } from "@/api/queryKeys";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ProviderConfigDialog, useProviderConfigFlow } from "@/pages/settings/components/providers";
+import LLMSelector from "@/components/common/LLMSelector";
 import { useLLMStore } from "@/store/llmStore";
 import {
   shouldInitializeProviderSelection,
@@ -208,6 +226,71 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
     forceConfiguration: props.forceConfiguration === true,
   });
 
+  const [configKind, setConfigKind] = useState<"text" | "image">("text");
+
+  const apiKeysQuery = useQuery({
+    queryKey: queryKeys.settings.apiKeys,
+    queryFn: getAPIKeySettings,
+    enabled: props.open && configKind === "image",
+  });
+  const providerConfigList = apiKeysQuery.data?.data ?? [];
+  const providerConfigFlow = useProviderConfigFlow({
+    providers: providerConfigList,
+    onSaved: (message) => toast.success(message),
+    onFailed: (message) => toast.error(message),
+  });
+  const imageProviderOptions = useMemo(() => {
+    const imageCapable = providerConfigList.filter((item) => item.imageModels.length > 0);
+    return [...imageCapable].sort(
+      (a, b) => Number(b.isConfigured && b.isActive) - Number(a.isConfigured && a.isActive),
+    );
+  }, [providerConfigList]);
+  const imageSelectionProviderOptions = useMemo(
+    () => imageProviderOptions.filter((item) => item.isConfigured && item.isActive),
+    [imageProviderOptions],
+  );
+
+  const imageSelectionQuery = useQuery({
+    queryKey: queryKeys.settings.imageSelection,
+    queryFn: getImageSelectionSettings,
+    enabled: props.open && configKind === "image",
+  });
+  const [imageSelection, setImageSelection] = useState<{ provider: string; model: string }>({
+    provider: "",
+    model: "",
+  });
+
+  useEffect(() => {
+    const saved = imageSelectionQuery.data?.data ?? null;
+    setImageSelection(saved ? { provider: saved.provider, model: saved.model } : { provider: "", model: "" });
+  }, [imageSelectionQuery.data]);
+
+  const imageSelectionProviderConfig = providerConfigList.find(
+    (item) => item.provider === imageSelection.provider,
+  ) ?? null;
+  const imageSelectionModelOptions = imageSelectionProviderConfig
+    ? Array.from(new Set([
+      ...imageSelectionProviderConfig.imageModels,
+      imageSelectionProviderConfig.currentImageModel || "",
+    ].filter(Boolean)))
+    : [];
+
+  const saveImageSelectionMutation = useMutation({
+    mutationFn: () => saveImageSelectionSettings({
+      provider: imageSelection.provider as LLMProvider,
+      model: imageSelection.model,
+    }),
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.imageSelection });
+      toast.success(response.message || "默认生图模型已保存，生图任务会按这个模型执行。");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "默认生图模型保存失败。");
+    },
+  });
+
+  const showReadyScreen = props.status?.readyForCreation && !props.forceConfiguration && !completeMutation.isSuccess;
+
   const submit = () => {
     setStep(3);
     completeMutation.mutate({
@@ -220,9 +303,15 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
     });
   };
 
-  const footer = props.loading || props.error || (props.status?.readyForCreation && !props.forceConfiguration)
+  const footer = props.loading || props.error || showReadyScreen
     ? null
-    : step === 1
+    : configKind === "image"
+      ? (
+          <Button onClick={() => props.onOpenChange(false)}>
+            <Check className="h-4 w-4" /> 完成
+          </Button>
+        )
+      : step === 1
       ? (
           <Button onClick={() => setStep(2)} disabled={!canContinueProvider}>
             填写连接信息 <ArrowRight className="h-4 w-4" />
@@ -258,34 +347,15 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
             : null;
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+    <>
+      <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <AppDialogContent
         className="max-w-3xl"
-        title="让 AI 创作环境先跑起来"
-        description="只配置一个文本模型，系统会自动准备规划、正文、审校和修复所需的任务路由。"
+        title={props.forceConfiguration ? "模型设置" : "让 AI 创作环境先跑起来"}
+        description="配置文本模型和生图模型；文本模型就绪后，系统会自动准备规划、正文、审校和修复所需的任务路由。"
         footer={footer}
         footerClassName="gap-2"
       >
-        <div className="mb-6 grid grid-cols-3 gap-2">
-          {[
-            { index: 1, label: "选择厂商" },
-            { index: 2, label: "连接模型" },
-            { index: 3, label: "检测完成" },
-          ].map((item) => (
-            <div key={item.index} className={cn(
-              "rounded-lg border px-3 py-2 text-xs",
-              step === item.index ? "border-primary bg-primary/5 text-primary" : step > item.index ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "text-muted-foreground",
-            )}>
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[11px]">
-                  {step > item.index ? <Check className="h-3 w-3" /> : item.index}
-                </span>
-                {item.label}
-              </div>
-            </div>
-          ))}
-        </div>
-
         {props.loading ? (
           <div className="flex min-h-56 items-center justify-center text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 正在检查创作环境
@@ -299,18 +369,195 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
             </div>
             <Button variant="outline" onClick={props.onRetry}>重新加载</Button>
           </div>
-        ) : props.status?.readyForCreation && !props.forceConfiguration && !completeMutation.isSuccess ? (
+        ) : showReadyScreen ? (
           <div className="flex min-h-56 flex-col items-center justify-center gap-4 text-center">
             <CheckCircle2 className="h-10 w-10 text-emerald-600" />
             <div>
               <div className="text-lg font-semibold">创作环境可以使用</div>
               <div className="mt-2 text-sm text-muted-foreground">
-                {props.status.selectedProvider} · {props.status.selectedModel}，{props.status.routeCoverage.total} 类核心任务均已就绪。
+                {props.status?.selectedProvider} · {props.status?.selectedModel}，{props.status?.routeCoverage.total ?? 0} 类核心任务均已就绪。
               </div>
             </div>
             <Button onClick={() => props.onOpenChange(false)}>继续创作</Button>
           </div>
-        ) : step === 1 ? (
+        ) : (
+          <>
+            <div className="mb-5 grid grid-cols-2 gap-2">
+              {([
+                { id: "text" as const, label: "文本模型", icon: Type },
+                { id: "image" as const, label: "生图模型", icon: Images },
+              ]).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
+                    configKind === item.id
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "text-muted-foreground hover:bg-muted/40",
+                  )}
+                  onClick={() => setConfigKind(item.id)}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {configKind === "image" ? (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-muted/30 p-4">
+                  <div className="font-semibold">默认生图模型</div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    选择配置好的厂商和模型设为全局默认，角色形象、封面、漫画分镜等生图任务都会按它执行。
+                  </p>
+                  {imageSelectionQuery.isPending ? (
+                    <div className="mt-3 flex items-center text-sm text-muted-foreground">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 正在读取默认生图模型
+                    </div>
+                  ) : imageSelectionProviderOptions.length === 0 ? (
+                    <div className="mt-3 text-sm text-muted-foreground">
+                      先在下方配置一个可用的生图厂商，再回到这里设为默认。
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <Select
+                        value={imageSelection.provider}
+                        onValueChange={(value) => {
+                          const config = providerConfigList.find((item) => item.provider === value) ?? null;
+                          const nextModel = config?.currentImageModel
+                            || config?.defaultImageModel
+                            || config?.imageModels[0]
+                            || "";
+                          setImageSelection({ provider: value, model: nextModel });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="选择生图厂商" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {imageSelectionProviderOptions.map((item) => (
+                              <SelectItem key={item.provider} value={item.provider}>
+                                {item.displayName?.trim() || item.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={imageSelection.model}
+                        onValueChange={(value) => setImageSelection((current) => ({ ...current, model: value }))}
+                        disabled={!imageSelection.provider || imageSelectionModelOptions.length === 0}
+                      >
+                        <SelectTrigger><SelectValue placeholder="选择生图模型" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {imageSelectionModelOptions.map((model) => (
+                              <SelectItem key={model} value={model}>{model}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        onClick={() => saveImageSelectionMutation.mutate()}
+                        disabled={!imageSelection.provider || !imageSelection.model || saveImageSelectionMutation.isPending}
+                      >
+                        {saveImageSelectionMutation.isPending
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Check className="h-4 w-4" />}
+                        设为默认
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-semibold">生图模型</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    角色形象、漫画分镜、小说封面等图片生成使用的模型。选择一个厂商，填写 API Key 和生图模型后保存即可生效。
+                  </p>
+                </div>
+                {apiKeysQuery.isPending ? (
+                  <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 正在读取生图厂商
+                  </div>
+                ) : apiKeysQuery.isError ? (
+                  <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
+                    <CircleAlert className="h-8 w-8 text-amber-600" />
+                    暂时无法读取生图厂商状态。
+                    <Button variant="outline" size="sm" onClick={() => void apiKeysQuery.refetch()}>重新加载</Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {imageProviderOptions.map((item) => {
+                      const ready = item.isConfigured && item.isActive;
+                      const imageModel = item.currentImageModel || item.defaultImageModel || "";
+                      return (
+                        <button
+                          key={item.provider}
+                          type="button"
+                          className={cn(
+                            "rounded-xl border p-4 text-left transition hover:border-primary/50 hover:bg-primary/5",
+                            ready ? "border-primary/25" : "border-dashed",
+                          )}
+                          onClick={() => providerConfigFlow.openBuiltInDialog(item.provider)}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-semibold">{item.displayName?.trim() || item.name}</div>
+                              <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                生图模型：{imageModel || "未设置"}
+                              </div>
+                            </div>
+                            <Badge
+                              variant={ready ? "default" : "outline"}
+                              className={ready ? "bg-emerald-600 text-white hover:bg-emerald-600" : ""}
+                            >
+                              {ready ? "可用" : "待配置"}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                            {ready
+                              ? "点击可以更换生图模型、API Key 和请求限制。"
+                              : "点击填写 API Key，并选择这个厂商的生图模型。"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      className="rounded-xl border border-dashed p-4 text-left transition hover:border-primary/50 hover:bg-primary/5"
+                      onClick={() => providerConfigFlow.openCreateCustomDialog()}
+                    >
+                      <div className="flex items-center gap-2 font-semibold"><ServerCog className="h-4 w-4" /> 添加第三方厂商</div>
+                      <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                        连接任意 OpenAI 兼容的生图服务，例如中转接口、本地网关或自建服务。
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="mb-6 grid grid-cols-3 gap-2">
+                  {[
+                    { index: 1, label: "选择厂商" },
+                    { index: 2, label: "连接模型" },
+                    { index: 3, label: "检测完成" },
+                  ].map((item) => (
+                    <div key={item.index} className={cn(
+                      "rounded-lg border px-3 py-2 text-xs",
+                      step === item.index ? "border-primary bg-primary/5 text-primary" : step > item.index ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "text-muted-foreground",
+                    )}>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[11px]">
+                          {step > item.index ? <Check className="h-3 w-3" /> : item.index}
+                        </span>
+                        {item.label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+        {step === 1 ? (
           <div className="space-y-4">
             <div>
               <h3 className="font-semibold">{showAllProviderChoices ? "选择一个内置模型厂商" : "从推荐方案开始"}</h3>
@@ -319,6 +566,15 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
                   ? "选择一个厂商后，再填写连接信息。"
                   : "先配置一个文本模型即可开始创作；需要时再选择其他厂商。"}
               </p>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-4">
+              <div className="font-semibold">默认文本模型</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                从已配置好的模型里选择全局默认，写作、规划、审校等全部文字任务都按它执行。
+              </p>
+              <div className="mt-3">
+                <LLMSelector compact showBadge={false} />
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {providerChoices.map((provider) => (
@@ -485,7 +741,40 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
             )}
           </div>
         )}
+              </>
+            )}
+          </>
+        )}
       </AppDialogContent>
     </Dialog>
+
+    <ProviderConfigDialog
+      open={providerConfigFlow.isDialogOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          providerConfigFlow.resetDialogState();
+        }
+      }}
+      isCreatingCustomProvider={providerConfigFlow.isCreatingCustomProvider}
+      isCustomDialog={providerConfigFlow.isCustomDialog}
+      editingConfig={providerConfigFlow.editingConfig}
+      form={providerConfigFlow.form}
+      setForm={providerConfigFlow.setForm}
+      selectableModels={providerConfigFlow.selectableModels}
+      previewModelsResult={providerConfigFlow.previewModelsResult}
+      isPreviewingModels={providerConfigFlow.isPreviewingModels}
+      onClearPreviewModels={providerConfigFlow.clearPreviewModels}
+      onPreviewModels={providerConfigFlow.handlePreviewCustomModels}
+      onSubmit={providerConfigFlow.handleSubmitProviderDialog}
+      submitDisabled={providerConfigFlow.submitDisabled}
+      submitLabel={providerConfigFlow.submitLabel}
+      onTest={providerConfigFlow.handleTestProviderDialog}
+      testDisabled={providerConfigFlow.testDisabled}
+      testResult={providerConfigFlow.dialogTestResult}
+      onDeleteCustomProvider={providerConfigFlow.handleDeleteCustomProvider}
+      deleteDisabled={providerConfigFlow.deleteDisabled}
+      deleteLabel={providerConfigFlow.deleteLabel}
+    />
+    </>
   );
 }

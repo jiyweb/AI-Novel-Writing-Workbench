@@ -12,6 +12,7 @@ import {
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
+import { getImageSelectionSettings } from "../settings/ImageSelectionSettingsService";
 import {
   buildNovelCoverTaskPrompt,
   loadNovelCoverNovel,
@@ -37,6 +38,28 @@ import type {
 } from "./types";
 
 type SupportedImageSceneType = "character" | "novel_cover" | "book_analysis_character" | "comic_panel";
+
+/**
+ * 生图请求的厂商/模型解析顺序：请求显式指定时以请求为准；
+ * 两者都未指定时使用「模型设置」里保存的全局默认生图模型；
+ * 未保存全局默认时回退到厂商当前生图模型或内置默认。
+ */
+async function resolveImageGenerationTarget(
+  provider: LLMProvider | undefined,
+  model: string | undefined,
+): Promise<{ provider: LLMProvider; model: string }> {
+  if (!provider?.trim() && !model?.trim()) {
+    const selection = await getImageSelectionSettings();
+    if (selection) {
+      return { provider: selection.provider, model: selection.model };
+    }
+  }
+  const resolvedProvider: LLMProvider = provider?.trim() ? provider : "openai";
+  if (!isImageProviderSupported(resolvedProvider)) {
+    throw new AppError(`Provider ${resolvedProvider} is not supported for image generation yet.`, 400);
+  }
+  return { provider: resolvedProvider, model: await resolveImageModel(resolvedProvider, model) };
+}
 
 function parseBookAnalysisCharacterProfile(profileJson: string | null): Record<string, unknown> {
   if (!profileJson?.trim()) {
@@ -179,10 +202,7 @@ export class ImageGenerationService {
   private processing = false;
 
   async createCharacterTask(input: CharacterImageGenerationRequest): Promise<ImageGenerationTask> {
-    const provider: LLMProvider = input.provider ?? "openai";
-    if (!isImageProviderSupported(provider)) {
-      throw new AppError(`Provider ${provider} is not supported for image generation yet.`, 400);
-    }
+    const { provider, model } = await resolveImageGenerationTarget(input.provider, input.model);
 
     const character = await prisma.baseCharacter.findUnique({
       where: { id: input.baseCharacterId },
@@ -191,7 +211,6 @@ export class ImageGenerationService {
       throw new AppError("Base character not found.", 404);
     }
 
-    const model = await resolveImageModel(provider, input.model);
     const prompt = input.promptMode === "direct"
       ? input.prompt.trim()
       : buildCharacterPrompt(input.prompt, input.stylePreset, character);
@@ -222,10 +241,7 @@ export class ImageGenerationService {
   }
 
   async createBookAnalysisCharacterTask(input: BookAnalysisCharacterImageGenerationRequest): Promise<ImageGenerationTask> {
-    const provider: LLMProvider = input.provider ?? "openai";
-    if (!isImageProviderSupported(provider)) {
-      throw new AppError(`Provider ${provider} is not supported for image generation yet.`, 400);
-    }
+    const { provider, model } = await resolveImageGenerationTarget(input.provider, input.model);
 
     const character = await prisma.bookAnalysisCharacter.findUnique({
       where: { id: input.bookAnalysisCharacterId },
@@ -237,7 +253,6 @@ export class ImageGenerationService {
       throw new AppError("Generate the character profile before creating character images.", 400);
     }
 
-    const model = await resolveImageModel(provider, input.model);
     const prompt = input.promptMode === "direct"
       ? input.prompt.trim()
       : buildBookAnalysisCharacterPrompt(input.prompt, input.stylePreset, character);
@@ -269,13 +284,9 @@ export class ImageGenerationService {
   }
 
   async createNovelCoverTask(input: NovelCoverImageGenerationRequest): Promise<ImageGenerationTask> {
-    const provider: LLMProvider = input.provider ?? "openai";
-    if (!isImageProviderSupported(provider)) {
-      throw new AppError(`Provider ${provider} is not supported for image generation yet.`, 400);
-    }
+    const { provider, model } = await resolveImageGenerationTarget(input.provider, input.model);
 
     const novel = await loadNovelCoverNovel(input.novelId);
-    const model = await resolveImageModel(provider, input.model);
     const prompt = input.promptMode === "direct"
       ? `${input.prompt.trim()}\n${buildNovelCoverTitleInstruction(novel.title)}`
       : await buildNovelCoverTaskPrompt({
@@ -314,11 +325,7 @@ export class ImageGenerationService {
    * 不走参考图链；归属关系由客户端维护，服务端只记录分镜 id 供任务展示。
    */
   async createComicPanelTask(input: ComicPanelImageGenerationRequest): Promise<ImageGenerationTask> {
-    const provider: LLMProvider = input.provider ?? "openai";
-    if (!isImageProviderSupported(provider)) {
-      throw new AppError(`Provider ${provider} is not supported for image generation yet.`, 400);
-    }
-    const model = await resolveImageModel(provider, input.model);
+    const { provider, model } = await resolveImageGenerationTarget(input.provider, input.model);
     const task = await prisma.imageGenerationTask.create({
       data: {
         sceneType: "comic_panel",

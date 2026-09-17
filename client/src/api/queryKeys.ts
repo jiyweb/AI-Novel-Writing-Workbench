@@ -149,6 +149,7 @@ export const queryKeys = {
   settings: {
     apiKeys: ["settings", "api-keys"] as const,
     llmSelection: ["settings", "llm-selection"] as const,
+    imageSelection: ["settings", "image-selection"] as const,
     apiKeyBalances: ["settings", "api-key-balances"] as const,
     rag: ["settings", "rag"] as const,
     ragEmbeddingModels: (provider: string) => ["settings", "rag", "embedding-models", provider] as const,

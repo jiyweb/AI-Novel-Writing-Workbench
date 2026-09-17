@@ -13,8 +13,9 @@ export default function ImageModelProvidersSection(props: {
   providers: APIKeyStatus[];
   onCreateCustomProvider: () => void;
   onOpenConfig: (provider: LLMProvider) => void;
+  onRemoveProvider?: (provider: APIKeyStatus) => void;
 }) {
-  const { providers, onCreateCustomProvider, onOpenConfig } = props;
+  const { providers, onCreateCustomProvider, onOpenConfig, onRemoveProvider } = props;
   const [isAddProviderOpen, setIsAddProviderOpen] = useState(false);
   const imageProviders = useMemo(
     () => providers.filter((provider) => provider.isConfigured && provider.isActive && provider.supportsImageGeneration),
@@ -51,6 +52,7 @@ export default function ImageModelProvidersSection(props: {
             key={provider.provider}
             provider={provider}
             onOpenConfig={onOpenConfig}
+            onRemoveProvider={onRemoveProvider}
           />
         ))}
         {!imageProviders.length ? (

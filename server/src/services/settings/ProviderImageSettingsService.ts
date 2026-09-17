@@ -4,6 +4,8 @@ import { prisma } from "../../db/prisma";
 export type ImageModelProvider = "openai" | "siliconflow" | "grok" | "volcengine" | "grsai";
 
 const IMAGE_MODEL_SETTING_PREFIX = "provider.imageModel";
+const IMAGE_MODEL_LIST_SETTING_PREFIX = "provider.imageModels";
+const MAX_SAVED_IMAGE_MODELS = 200;
 
 const IMAGE_MODEL_OPTIONS: Record<ImageModelProvider, string[]> = {
   openai: ["gpt-image-2"],
@@ -188,6 +190,133 @@ export async function saveProviderImageModel(
   } catch (error) {
     if (isMissingTableError(error)) {
       return normalized ?? getProviderEnvImageModel(provider) ?? getDefaultImageModel(provider);
+    }
+    throw error;
+  }
+}
+
+export function getImageModelListSettingKey(provider: LLMProvider): string | null {
+  if (!supportsImageModelSettings(provider)) {
+    return null;
+  }
+  return `${IMAGE_MODEL_LIST_SETTING_PREFIX}.${provider}`;
+}
+
+function parseImageModelList(value: string): string[] | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+    const models = parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return Array.from(new Set(models)).slice(0, MAX_SAVED_IMAGE_MODELS);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 该厂商保存的生图模型列表：已保存（含空列表）时返回保存值；
+ * 从未保存过时回退到内置预设。空列表表示该厂商不再提供生图模型。
+ */
+export async function getProviderImageModels(provider: LLMProvider): Promise<string[]> {
+  const key = getImageModelListSettingKey(provider);
+  if (!key) {
+    return [];
+  }
+
+  try {
+    const record = await prisma.appSetting.findUnique({
+      where: { key },
+    });
+    if (!record) {
+      return getImageModelOptions(provider);
+    }
+    return parseImageModelList(record.value) ?? getImageModelOptions(provider);
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return getImageModelOptions(provider);
+    }
+    throw error;
+  }
+}
+
+export async function getProviderImageModelsMap(
+  providers: LLMProvider[],
+): Promise<Map<LLMProvider, string[]>> {
+  const keys = providers
+    .map((provider) => getImageModelListSettingKey(provider))
+    .filter((value): value is string => Boolean(value));
+  const result = new Map<LLMProvider, string[]>();
+  if (keys.length === 0) {
+    return result;
+  }
+
+  try {
+    const records = await prisma.appSetting.findMany({
+      where: {
+        key: {
+          in: keys,
+        },
+      },
+    });
+    const valueMap = new Map(records.map((item) => [item.key, item.value]));
+    for (const provider of providers) {
+      const key = getImageModelListSettingKey(provider);
+      if (!key) {
+        continue;
+      }
+      const record = valueMap.get(key);
+      result.set(provider, record ? parseImageModelList(record) ?? [] : getImageModelOptions(provider));
+    }
+    return result;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return result;
+    }
+    throw error;
+  }
+}
+
+/**
+ * 保存该厂商的生图模型列表；当前生效的生图模型不在新列表中时会一并清除，
+ * 让生效值回退到 env 或默认模型。
+ */
+export async function saveProviderImageModels(
+  provider: LLMProvider,
+  models: string[],
+): Promise<string[]> {
+  const key = getImageModelListSettingKey(provider);
+  if (!key) {
+    return [];
+  }
+
+  const normalized = Array.from(
+    new Set(
+      models
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, MAX_SAVED_IMAGE_MODELS);
+
+  try {
+    await prisma.appSetting.upsert({
+      where: { key },
+      update: { value: JSON.stringify(normalized) },
+      create: { key, value: JSON.stringify(normalized) },
+    });
+    const currentImageModel = await getProviderImageModel(provider);
+    if (currentImageModel && !normalized.includes(currentImageModel)) {
+      await saveProviderImageModel(provider, null);
+    }
+    return normalized;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return normalized;
     }
     throw error;
   }
